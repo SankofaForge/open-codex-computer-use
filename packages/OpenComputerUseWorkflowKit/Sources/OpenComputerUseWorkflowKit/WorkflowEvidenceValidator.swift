@@ -254,7 +254,7 @@ private func verifiedWorkspaceRoot(_ workspace: [String: Any], expected: URL) th
 private func validateArtifact(_ artifact: [String: Any], workspaceRoot: URL, allowTimestampSeconds: Bool = false) throws -> String {
     var allowed: Set<String> = ["path", "size", "sha256", "nonEmpty", "kind"]
     if allowTimestampSeconds {
-        allowed.append("timestampSeconds")
+        allowed.insert("timestampSeconds")
     }
     try exactKeys(artifact, allowed: allowed, label: "artifact")
     let path = try artifact.requiredString("path")
