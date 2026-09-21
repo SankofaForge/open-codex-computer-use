@@ -35,7 +35,7 @@ public enum WorkflowJSONValue: Sendable, Equatable {
     }
 
     public var intValue: Int? {
-        guard case .number(let value), value.rounded() == value else {
+        guard case let .number(value) = self, value.rounded() == value else {
             return nil
         }
 

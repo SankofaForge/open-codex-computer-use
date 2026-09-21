@@ -20,12 +20,12 @@ public final class WorkflowMCPServer {
         case "tools/list": return try result(id, ["tools": Self.toolNames.map { ["name": $0, "description": "Design-inspiration workflow operation", "inputSchema": ["type": "object", "additionalProperties": true]] }])
         case "tools/call": return try call(id, params)
         default: return error(id, -32601, "Method not found: \(method ?? "")") }
-        } catch { return error(id, -32000, String(describing: error)) }
+        } catch { return self.error(id, -32000, String(describing: error)) }
     }
     private func call(_ id: Any, _ p: [String: Any]) throws -> String { guard let name = p["name"] as? String, Self.toolNames.contains(name) else { return error(id, -32602, "Unknown workflow tool") }; let a = p["arguments"] as? [String: Any] ?? [:]; let runID = a["runId"] as? String ?? UUID().uuidString
-        if name == "workflow_cancel" { cancelled.insert(runID); return try result(id, envelope(runID, "cancel", "partial", ["cancelled"])) }
+        if name == "workflow_cancel" { cancelled.insert(runID); return try result(id, envelope(runID, "cancel", "partial", ["cancelled": true])) }
         if name == "workflow_run" {
-            var record = envelope(runID, "preflight", "complete", [])
+            var record = envelope(runID, "preflight", "complete", [:])
             for stage in WorkflowStage.allCases {
                 if cancelled.contains(runID) { break }
                 record = try dispatch(runID: runID, stage: stage, arguments: a)
@@ -43,9 +43,9 @@ public final class WorkflowMCPServer {
         do { return envelope(runID, stage.rawValue, "complete", try dispatcher.dispatch(stage: stage, arguments: arguments)) }
         catch let error as WorkflowStageDispatchError {
             switch error {
-            case .backend(let record): return envelope(runID, stage.rawValue, "partial", [], error: record)
-            case .missingBackend(let kind, let failedStage): return envelope(runID, failedStage.rawValue, "blocked", [], gaps: [WorkflowGap(code: "missing_backend", message: "No \(kind.rawValue) backend is configured.", required: true)], blockedReason: error.localizedDescription)
-            case .missingTool(let kind, let tool, let failedStage): return envelope(runID, failedStage.rawValue, "blocked", [], gaps: [WorkflowGap(code: "missing_tool", message: "\(kind.rawValue) does not declare \(tool).", required: true)], blockedReason: error.localizedDescription)
+            case .backend(let record): return envelope(runID, stage.rawValue, "partial", [:], error: record)
+            case .missingBackend(let kind, let failedStage): return envelope(runID, failedStage.rawValue, "blocked", [:], gaps: [WorkflowGap(code: "missing_backend", message: "No \(kind.rawValue) backend is configured.", required: true)], blockedReason: error.localizedDescription)
+            case .missingTool(let kind, let tool, let failedStage): return envelope(runID, failedStage.rawValue, "blocked", [:], gaps: [WorkflowGap(code: "missing_tool", message: "\(kind.rawValue) does not declare \(tool).", required: true)], blockedReason: error.localizedDescription)
             }
         }
     }
