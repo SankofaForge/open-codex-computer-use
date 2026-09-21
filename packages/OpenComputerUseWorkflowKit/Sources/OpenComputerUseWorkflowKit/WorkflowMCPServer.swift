@@ -1,13 +1,5 @@
 import Foundation
 
-public struct WorkflowConfiguration: Codable {
-    public var backends: [Backend] = []
-    public var checkpointDirectory: String?
-    public struct Backend: Codable { public var id: String; public var command: String; public var arguments: [String] = []; public var workingDirectory: String?; public var environmentAllowlist: [String] = [] }
-    public static func load(path: String) throws -> Self { try JSONDecoder().decode(Self.self, from: Data(contentsOf: URL(fileURLWithPath: path))) }
-}
-
-public enum WorkflowStage: String, CaseIterable { case preflight, searchReferences = "search_references", prepareReferences = "prepare_references", extractTokens = "extract_tokens", checkCaptureGPU = "check_capture_gpu", capture, submitMotionAnalysis = "submit_motion_analysis", extractFrames = "extract_frames", handoffOpenDesign = "handoff_open_design", resolveAssetRoutes = "resolve_asset_routes", validate }
 public protocol WorkflowStageDispatcher { func dispatch(stage: WorkflowStage, arguments: [String: Any]) throws -> [String: Any] }
 public struct StubWorkflowStageDispatcher: WorkflowStageDispatcher { public init() {} ; public func dispatch(stage: WorkflowStage, arguments: [String: Any]) throws -> [String: Any] { ["stage": stage.rawValue, "implemented": false] } }
 

@@ -187,6 +187,45 @@ public struct WorkflowConfiguration: Codable, Equatable, Sendable {
         self.backends = backends
     }
 
+    public static func load(path: String) throws -> Self {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let decoder = JSONDecoder()
+        if let configuration = try? decoder.decode(Self.self, from: data) {
+            try configuration.validate()
+            return configuration
+        }
+
+        struct Legacy: Decodable {
+            struct Backend: Decodable {
+                let id: String
+                let command: String
+                let arguments: [String]?
+                let workingDirectory: String?
+                let environmentAllowlist: [String]?
+                let declaredTools: [String]?
+            }
+            let workspaceRoot: String?
+            let backends: [Backend]
+        }
+        let legacy = try decoder.decode(Legacy.self, from: data)
+        let backends = try legacy.backends.map { backend in
+            guard let kind = WorkflowBackendKind(rawValue: backend.id) else {
+                throw WorkflowContractError(.invalidConfiguration, "unsupported backend kind: \(backend.id)")
+            }
+            return WorkflowBackendConfiguration(
+                kind: kind,
+                command: backend.command,
+                arguments: backend.arguments ?? [],
+                workingDirectory: backend.workingDirectory,
+                permittedEnvironmentVariables: backend.environmentAllowlist ?? [],
+                declaredTools: backend.declaredTools ?? []
+            )
+        }
+        let configuration = Self(workspaceRoot: legacy.workspaceRoot ?? ".", backends: backends)
+        try configuration.validate()
+        return configuration
+    }
+
     public func validate() throws {
         guard !workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw WorkflowContractError(.invalidConfiguration, "workspaceRoot is required")
