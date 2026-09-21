@@ -83,3 +83,12 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
   compatible.
 - 2026-09-21: Keep workflow control data in `workflow-control.v1` rather than
   extending strict `workflow-manifest.v2`.
+
+## Contract milestone
+
+Status: implemented in `OpenComputerUseWorkflowKit`; integration and the
+macOS acceptance gate remain.
+
+The contract layer owns control envelopes, backend configuration, strict v2
+evidence validation, artifact containment and SHA-256 checks, four-cell visual
+evidence, Open Design evidence, and fail-closed asset-route readiness.
