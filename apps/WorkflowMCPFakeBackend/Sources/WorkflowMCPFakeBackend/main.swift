@@ -25,6 +25,10 @@ enum WorkflowMCPFakeBackend {
             case "notifications/initialized":
                 continue
             case "tools/list":
+                if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" {
+                    respond(id: id, result: ["tools": workflowTools.map { ["name": $0] }])
+                    continue
+                }
                 respond(id: id, result: [
                     "tools": [
                         ["name": "echo"],
@@ -45,6 +49,10 @@ enum WorkflowMCPFakeBackend {
     }
 
     private static func handleTool(name: String, id: Any?, arguments: Any) {
+        if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" && workflowTools.contains(name) {
+            respond(id: id, result: ["content": [["type": "text", "text": name]], "arguments": arguments])
+            return
+        }
         switch name {
         case "echo":
             FileHandle.standardError.write(Data("fake-backend diagnostic\\n".utf8))
@@ -62,6 +70,12 @@ enum WorkflowMCPFakeBackend {
             respondError(id: id, code: -32601, message: "unknown tool \(name)", data: nil)
         }
     }
+
+    private static let workflowTools = [
+        "design_search_references", "design_prepare_references", "design_extract_tokens",
+        "check_capture_gpu", "capture_site_motion", "submit_motion_analysis",
+        "extract_frames", "handoff_open_design", "resolve_asset_routes",
+    ]
 
     private static func respond(id: Any?, result: [String: Any]) {
         write([

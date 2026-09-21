@@ -42,7 +42,7 @@ public enum WorkflowJSONValue: Sendable, Equatable {
         return Int(value)
     }
 
-    fileprivate init(foundationValue: Any) throws {
+    init(foundationValue: Any) throws {
         switch foundationValue {
         case is NSNull:
             self = .null
@@ -61,7 +61,7 @@ public enum WorkflowJSONValue: Sendable, Equatable {
         }
     }
 
-    fileprivate var foundationValue: Any {
+    var foundationValue: Any {
         switch self {
         case .null:
             NSNull()

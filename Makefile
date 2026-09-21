@@ -22,7 +22,7 @@ smoke:
 	./scripts/run-tool-smoke-tests.sh
 
 workflow-smoke:
-	@echo "workflow-mcp has an initial scaffold only; workflow-smoke is reserved for the future fake-backend integration suite."
+	swift test --filter WorkflowChildMCPDispatcherTests
 
 stress:
 	./scripts/run-tool-stress-tests.sh
