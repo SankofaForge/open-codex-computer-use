@@ -3,16 +3,15 @@
 ## Current status
 
 `OpenComputerUseWorkflowKit` is available as a Swift package target and
-library product. This checkout has an early stdio scaffold at:
+library product. This checkout has a stdio workflow host at:
 
 ```text
 open-computer-use workflow-mcp --config <path>
 ```
 
-The scaffold advertises the planned workflow tool names and returns structured
-control records, but it does not yet launch backend processes, validate
-evidence, checkpoint durable run state, prompt for app approval, or dispatch
-desktop input. Do not register it in a client configuration for production use.
+The workflow kit launches configured child MCP processes, validates evidence,
+and returns structured control records. Desktop input remains macOS-only and
+requires the app-approval policy.
 
 Existing `open-computer-use mcp` clients continue to receive the unchanged
 nine-tool Computer Use surface.
@@ -82,8 +81,7 @@ The future host will preserve the existing workflow evidence contract:
 
 ## Smoke target
 
-`make workflow-smoke` currently reserves the CI entry point and reports that
-the scaffold is not an integration-tested workflow host. It is intentionally
-not an end-to-end claim. When the server lands, the target must become a
-deterministic fake-MCP workflow smoke test covering handshake, declared-tool
-enforcement, checkpoint resume, cancellation, and evidence validation.
+`make workflow-smoke` runs the deterministic fake-MCP workflow tests covering
+transport and dispatcher behavior. Linux builds and tests the Foundation-only
+workflow kit. The complete OCU package, desktop approval, and GUI smoke tests
+remain macOS gates because Apple frameworks are unavailable on Linux.

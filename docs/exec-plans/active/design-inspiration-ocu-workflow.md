@@ -74,6 +74,8 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
 - [ ] Implement contract and validator layers.
 - [ ] Implement transport, server, approvals, and adapters.
 - [ ] Replace the placeholder smoke target and complete integration QA.
+- [x] Split the SwiftPM graph by platform so Linux can test the Foundation-only
+  workflow kit while macOS retains the complete OCU package gate.
 
 ## Decisions
 
