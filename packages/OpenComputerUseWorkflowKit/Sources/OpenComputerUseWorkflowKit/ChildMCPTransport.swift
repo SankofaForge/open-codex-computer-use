@@ -46,10 +46,14 @@ public enum WorkflowJSONValue: Sendable, Equatable {
         switch foundationValue {
         case is NSNull:
             self = .null
+        case let value as NSNumber:
+            if String(cString: value.objCType) == "c" {
+                self = .bool(value.boolValue)
+            } else {
+                self = .number(value.doubleValue)
+            }
         case let value as Bool:
             self = .bool(value)
-        case let value as NSNumber:
-            self = .number(value.doubleValue)
         case let value as String:
             self = .string(value)
         case let value as [Any]:

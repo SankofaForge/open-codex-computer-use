@@ -59,7 +59,12 @@ enum WorkflowSHA256 {
             state[7] = state[7] &+ h
         }
         return state.flatMap { value in
-            [UInt8(value >> 24), UInt8(value >> 16), UInt8(value >> 8), UInt8(value)]
+            [
+                UInt8((value >> 24) & 0xff),
+                UInt8((value >> 16) & 0xff),
+                UInt8((value >> 8) & 0xff),
+                UInt8(value & 0xff),
+            ]
         }
     }
 
