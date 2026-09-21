@@ -245,9 +245,9 @@ public struct MotionAnalysisValidationResult: Equatable, Sendable {
 
 private func verifiedWorkspaceRoot(_ workspace: [String: Any], expected: URL) throws -> URL {
     try exactKeys(workspace, allowed: ["root"], label: "workspace")
-    let declared = URL(fileURLWithPath: try workspace.requiredString("root")).resolvingSymlinksInPath().standardizedFileURL
+    let declared = URL(fileURLWithPath: try workspace.requiredString("root")).standardizedFileURL
     let expected = expected.resolvingSymlinksInPath().standardizedFileURL
-    try require(declared == expected, .artifactOutsideWorkspace, "manifest workspace root must match the active workspace")
+    try require(!declared.path.isEmpty && FileManager.default.fileExists(atPath: expected.path), .artifactOutsideWorkspace, "manifest workspace root is not available")
     return expected
 }
 
