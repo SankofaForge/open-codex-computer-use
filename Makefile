@@ -3,7 +3,7 @@ SLUG ?=
 AGENTS ?= claude,codex
 SCENARIO ?= list-apps
 
-.PHONY: init build app test smoke stress agent-smoke check-docs check-repo ci release-package npm-build npm-publish new-history new-plan
+.PHONY: init build app test smoke workflow-smoke stress agent-smoke check-docs check-repo ci release-package npm-build npm-publish new-history new-plan
 
 init:
 	@if [ -z "$(PROJECT)" ]; then echo "用法: make init PROJECT=项目名"; exit 1; fi
@@ -20,6 +20,9 @@ test:
 
 smoke:
 	./scripts/run-tool-smoke-tests.sh
+
+workflow-smoke:
+	@echo "workflow-mcp has an initial scaffold only; workflow-smoke is reserved for the future fake-backend integration suite."
 
 stress:
 	./scripts/run-tool-stress-tests.sh

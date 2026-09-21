@@ -3,6 +3,16 @@ import ImageIO
 import XCTest
 @testable import OpenComputerUseKit
 
+private final class AppApprovalPromptRecorder: @unchecked Sendable {
+    var kinds: [AppApprovalPromptKind] = []
+    var responseForKind: [AppApprovalPromptKind: AppApprovalResponse] = [:]
+
+    func respond(to request: AppApprovalRequest) -> AppApprovalResponse {
+        kinds.append(request.kind)
+        return responseForKind[request.kind] ?? .unavailable
+    }
+}
+
 final class OpenComputerUseKitTests: XCTestCase {
     func testAppAgentSocketFileNamePreservesLegacyDefault() {
         XCTAssertEqual(openComputerUseAppAgentSocketFileName(namespace: nil), "open-computer-use-agent.sock")
@@ -1450,6 +1460,129 @@ final class OpenComputerUseKitTests: XCTestCase {
         XCTAssertTrue(AppSafetyPolicy.isBlocked(bundleIdentifier: "com.1password.1password"))
         XCTAssertTrue(AppSafetyPolicy.isBlocked(bundleIdentifier: "com.bitwarden.desktop"))
         XCTAssertTrue(AppSafetyPolicy.isBlocked(bundleIdentifier: "me.proton.pass.electron"))
+    }
+
+    func testAppApprovalPolicyRequiresApprovalBeforeAppStateAccess() {
+        let policy = AppApprovalPolicy(
+            allowedBundleIdentifiers: ["dev.opencodex.opencomputeruse.fixture"]
+        )
+
+        XCTAssertThrowsError(try policy.authorize(
+            toolName: "get_app_state",
+            arguments: ["app": "dev.opencodex.opencomputeruse.fixture"]
+        )) { error in
+            XCTAssertEqual(
+                (error as? ComputerUseError)?.errorDescription,
+                "approval_required: Access to 'dev.opencodex.opencomputeruse.fixture' needs an interactive session approval."
+            )
+        }
+        XCTAssertFalse(policy.isApprovedForCurrentSession(bundleIdentifier: "dev.opencodex.opencomputeruse.fixture"))
+    }
+
+    func testAppApprovalPolicyStoresOnlyApprovedSessionAccess() throws {
+        let recorder = AppApprovalPromptRecorder()
+        recorder.responseForKind[.access] = .approve
+        let policy = AppApprovalPolicy(
+            allowedBundleIdentifiers: ["dev.opencodex.opencomputeruse.fixture"],
+            prompt: recorder.respond
+        )
+
+        try policy.authorize(
+            toolName: "get_app_state",
+            arguments: ["app": "DEV.OPENCODEX.OPENCOMPUTERUSE.FIXTURE"]
+        )
+        try policy.authorize(
+            toolName: "get_app_state",
+            arguments: ["app": "dev.opencodex.opencomputeruse.fixture"]
+        )
+        XCTAssertEqual(recorder.kinds, [.access])
+        XCTAssertTrue(policy.isApprovedForCurrentSession(bundleIdentifier: "dev.opencodex.opencomputeruse.fixture"))
+
+        policy.resetSessionApprovals()
+        XCTAssertFalse(policy.isApprovedForCurrentSession(bundleIdentifier: "dev.opencodex.opencomputeruse.fixture"))
+    }
+
+    func testAppApprovalPolicyDeniesUnlistedAndPasswordManagerApps() {
+        let policy = AppApprovalPolicy(
+            allowedBundleIdentifiers: [
+                "dev.opencodex.opencomputeruse.fixture",
+                "com.1password.1password",
+            ],
+            prompt: { _ in .approve }
+        )
+
+        for app in ["com.google.Chrome", "com.1password.1password"] {
+            XCTAssertThrowsError(try policy.authorize(
+                toolName: "get_app_state",
+                arguments: ["app": app]
+            )) { error in
+                XCTAssertTrue(
+                    (error as? ComputerUseError)?.errorDescription?.hasPrefix("access_denied:") == true
+                )
+            }
+        }
+    }
+
+    func testDispatcherAppliesApprovalPolicyBeforeAppStateDispatch() {
+        let policy = AppApprovalPolicy(
+            allowedBundleIdentifiers: ["dev.opencodex.opencomputeruse.fixture"],
+            prompt: { _ in .approve }
+        )
+        let dispatcher = ComputerUseToolDispatcher(approvalPolicy: policy)
+
+        let result = dispatcher.callToolAsResult(
+            name: "get_app_state",
+            arguments: ["app": "com.google.Chrome"]
+        )
+
+        XCTAssertTrue(result.isError)
+        XCTAssertEqual(
+            result.primaryText,
+            "access_denied: The app 'com.google.chrome' is not in this session's allowlist."
+        )
+    }
+
+    func testAppApprovalPolicyRequiresSeparateSensitiveActionConfirmation() throws {
+        let recorder = AppApprovalPromptRecorder()
+        recorder.responseForKind[.access] = .approve
+        let policy = AppApprovalPolicy(
+            allowedBundleIdentifiers: ["dev.opencodex.opencomputeruse.fixture"],
+            prompt: recorder.respond
+        )
+
+        XCTAssertThrowsError(try policy.authorize(
+            toolName: "type_text",
+            arguments: ["app": "dev.opencodex.opencomputeruse.fixture", "text": "draft"]
+        )) { error in
+            XCTAssertEqual(
+                (error as? ComputerUseError)?.errorDescription,
+                "approval_required: The sensitive 'type_text' action for 'dev.opencodex.opencomputeruse.fixture' needs confirmation."
+            )
+        }
+        XCTAssertEqual(recorder.kinds, [.access, .sensitiveAction])
+    }
+
+    func testAppApprovalPolicyBlocksWorkflowGlobalPointerRoutes() {
+        let policy = AppApprovalPolicy(
+            allowedBundleIdentifiers: ["dev.opencodex.opencomputeruse.fixture"],
+            scope: .workflow,
+            environment: ["OPEN_COMPUTER_USE_ALLOW_GLOBAL_POINTER_FALLBACKS": "1"],
+            prompt: { _ in .approve }
+        )
+
+        let invocations: [(String, [String: Any])] = [
+            ("click", ["app": "dev.opencodex.opencomputeruse.fixture", "click_method": "global"]),
+            ("click", ["app": "dev.opencodex.opencomputeruse.fixture"]),
+            ("scroll", ["app": "dev.opencodex.opencomputeruse.fixture"]),
+            ("drag", ["app": "dev.opencodex.opencomputeruse.fixture"]),
+        ]
+        for invocation in invocations {
+            XCTAssertThrowsError(try policy.authorize(toolName: invocation.0, arguments: invocation.1)) { error in
+                XCTAssertTrue(
+                    (error as? ComputerUseError)?.errorDescription?.hasPrefix("access_denied: workflow global-pointer input is disabled") == true
+                )
+            }
+        }
     }
 
     func testVisualCursorEnvFlagDefaultsToEnabled() {

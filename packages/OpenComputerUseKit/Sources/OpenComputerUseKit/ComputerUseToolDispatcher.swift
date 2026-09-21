@@ -38,12 +38,19 @@ private func normalizedElementIndexNumber(_ value: Double) -> String? {
 
 public final class ComputerUseToolDispatcher {
     private let service: ComputerUseService
+    private let approvalPolicy: AppApprovalPolicy?
 
-    public init(service: ComputerUseService = ComputerUseService()) {
+    public init(
+        service: ComputerUseService = ComputerUseService(),
+        approvalPolicy: AppApprovalPolicy? = nil
+    ) {
         self.service = service
+        self.approvalPolicy = approvalPolicy
     }
 
     public func callTool(name: String, arguments: [String: Any]) throws -> ToolCallResult {
+        try approvalPolicy?.authorize(toolName: name, arguments: arguments)
+
         switch name {
         case "list_apps":
             return service.listApps()

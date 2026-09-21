@@ -3,6 +3,7 @@ import Foundation
 public enum OpenComputerUseCLICommand: Equatable {
     case launchOnboarding
     case mcp
+    case workflowMCP(config: String)
     case doctor
     case listApps
     case snapshot(app: String, textLimit: SnapshotTextLimit = .defaults, treeLimits: AccessibilityTreeLimits = .defaults)
@@ -34,6 +35,8 @@ public func shouldUseMacOSAppAgentProxy(
         return !runningFromLaunchServicesAppInstance
     case .mcp, .doctor, .listApps, .snapshot, .call:
         return true
+    case .workflowMCP:
+        return false
     case .turnEnded, .help, .version:
         return false
     }
@@ -76,6 +79,11 @@ public func parseOpenComputerUseCLI(arguments: [String]) throws -> OpenComputerU
         return .version
     case "mcp":
         return try parseSimpleCommand(name: "mcp", arguments: Array(arguments.dropFirst()), result: .mcp)
+    case "workflow-mcp":
+        guard arguments.count == 2, arguments[0] == "--config", !arguments[1].isEmpty else {
+            throw OpenComputerUseCLIError(message: "workflow-mcp requires --config <path>", helpCommand: "workflow-mcp")
+        }
+        return .workflowMCP(config: arguments[1])
     case "doctor":
         return try parseSimpleCommand(name: "doctor", arguments: Array(arguments.dropFirst()), result: .doctor)
     case "list-apps":
@@ -107,6 +115,7 @@ public func openComputerUseHelpText(command: String? = nil) -> String {
 
         Commands:
           mcp                  Start the stdio MCP server.
+          workflow-mcp         Start the design-inspiration workflow MCP.
           doctor               Print permission status and launch onboarding if needed.
           list-apps            Print running or recently used apps.
           snapshot <app>       Print the current accessibility snapshot for an app.

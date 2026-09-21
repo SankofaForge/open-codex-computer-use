@@ -12,6 +12,10 @@ let package = Package(
             name: "OpenComputerUseKit",
             targets: ["OpenComputerUseKit"]
         ),
+        .library(
+            name: "OpenComputerUseWorkflowKit",
+            targets: ["OpenComputerUseWorkflowKit"]
+        ),
         .executable(
             name: "OpenComputerUse",
             targets: ["OpenComputerUse"]
@@ -38,9 +42,13 @@ let package = Package(
             name: "OpenComputerUseKit",
             path: "packages/OpenComputerUseKit/Sources/OpenComputerUseKit"
         ),
+        .target(
+            name: "OpenComputerUseWorkflowKit",
+            path: "packages/OpenComputerUseWorkflowKit/Sources/OpenComputerUseWorkflowKit"
+        ),
         .executableTarget(
             name: "OpenComputerUse",
-            dependencies: ["OpenComputerUseKit"],
+            dependencies: ["OpenComputerUseKit", "OpenComputerUseWorkflowKit"],
             path: "apps/OpenComputerUse/Sources/OpenComputerUse"
         ),
         .executableTarget(
@@ -52,6 +60,10 @@ let package = Package(
             name: "OpenComputerUseSmokeSuite",
             dependencies: ["OpenComputerUseKit"],
             path: "apps/OpenComputerUseSmokeSuite/Sources/OpenComputerUseSmokeSuite"
+        ),
+        .executableTarget(
+            name: "WorkflowMCPFakeBackend",
+            path: "apps/WorkflowMCPFakeBackend/Sources/WorkflowMCPFakeBackend"
         ),
         .executableTarget(
             name: "CursorMotion",
@@ -70,6 +82,11 @@ let package = Package(
             name: "OpenComputerUseKitTests",
             dependencies: ["OpenComputerUseKit"],
             path: "packages/OpenComputerUseKit/Tests/OpenComputerUseKitTests"
+        ),
+        .testTarget(
+            name: "OpenComputerUseWorkflowKitTests",
+            dependencies: ["OpenComputerUseWorkflowKit", "WorkflowMCPFakeBackend"],
+            path: "packages/OpenComputerUseWorkflowKit/Tests/OpenComputerUseWorkflowKitTests"
         ),
         .testTarget(
             name: "StandaloneCursorSupportTests",

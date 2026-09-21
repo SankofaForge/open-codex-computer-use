@@ -103,6 +103,10 @@ You can also manually download and install the
 
 ## More
 
+The workflow-host package boundary is documented in
+[`docs/workflow-mcp.md`](./docs/workflow-mcp.md). Its early scaffold does not
+yet launch backend MCPs or alter any existing client configuration.
+
 Besides the MCP JSON config above, you can also use the built-in commands:
 
 ```bash

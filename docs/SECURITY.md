@@ -35,6 +35,30 @@
   - session 级审批
   - 更清楚的敏感 app / 系统设置防护策略
 
+## Planned workflow MCP boundary
+
+`OpenComputerUseWorkflowKit` currently has an initial `workflow-mcp` scaffold.
+It does not yet launch child processes, prompt for app approval, dispatch
+desktop input, or mutate a client configuration. Existing
+`open-computer-use mcp` behavior and its nine-tool surface remain compatible
+and continue to be the active desktop-control security boundary.
+
+The active execution plan for the future workflow host is
+[`docs/exec-plans/active/design-inspiration-ocu-workflow.md`](./exec-plans/active/design-inspiration-ocu-workflow.md).
+When that host is implemented, it must preserve these boundaries:
+
+- Backend MCP processes receive only explicitly allowed environment-variable
+  names. Configuration and logs must never contain secret values.
+- Open Design uses its generated direct command and daemon configuration. It
+  must not be routed through a secret-loading launcher.
+- The host validates bounded motion-analysis output supplied by the active
+  harness. It must not select or fall back to a model provider.
+- Desktop app access requires an allowlisted bundle identifier and a
+  session-scoped approval before app state or input is dispatched. Destructive
+  or externally visible actions require a separate confirmation.
+- Workflow requests must reject the global pointer path by default. The
+  existing password-manager denylist remains in force.
+
 ## Fixture Bridge 约束
 
 - `FixtureBridge` 只用于仓库内测试夹具，不是给第三方 app 的控制平面。

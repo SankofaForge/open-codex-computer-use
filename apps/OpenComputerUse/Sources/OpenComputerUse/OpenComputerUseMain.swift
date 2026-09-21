@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import OpenComputerUseKit
+import OpenComputerUseWorkflowKit
 
 @main
 enum OpenComputerUseMain {
@@ -48,6 +49,9 @@ enum OpenComputerUseMain {
             } else {
                 try server.run()
             }
+        case let .workflowMCP(config):
+            let configuration = try WorkflowConfiguration.load(path: config)
+            try WorkflowMCPServer(configuration: configuration).run()
         case .doctor:
             let permissions = PermissionDiagnostics.current()
             print(permissions.summary)

@@ -8,6 +8,8 @@ public enum ComputerUseError: Error, LocalizedError {
     case invalidArguments(String)
     case appNotFound(String)
     case permissionDenied(String)
+    case approvalRequired(String)
+    case accessDenied(String)
     case stateUnavailable(String)
 
     public var errorDescription: String? {
@@ -22,6 +24,10 @@ public enum ComputerUseError: Error, LocalizedError {
             return "appNotFound(\"\(app)\")"
         case .permissionDenied(let message):
             return message
+        case .approvalRequired(let message):
+            return "approval_required: \(message)"
+        case .accessDenied(let message):
+            return "access_denied: \(message)"
         case .stateUnavailable(let message):
             return message
         }
