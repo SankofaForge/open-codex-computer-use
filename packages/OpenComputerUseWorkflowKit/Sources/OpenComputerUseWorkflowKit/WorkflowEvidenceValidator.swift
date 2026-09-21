@@ -90,7 +90,7 @@ public enum WorkflowEvidenceValidator {
             let frame = try object(rawFrame, label: "frame")
             try exactKeys(frame, allowed: ["path", "size", "sha256", "nonEmpty", "kind", "timestampSeconds"], label: "frame")
             _ = try finiteNumber(frame["timestampSeconds"], label: "frame timestampSeconds", minimum: 0)
-            frameHashes.insert(try validateArtifact(frame, workspaceRoot: root))
+            frameHashes.insert(try validateArtifact(frame, workspaceRoot: root, allowTimestampSeconds: true))
         }
 
         let analysisContainer = try manifest.requiredObject("analysis")
@@ -251,8 +251,12 @@ private func verifiedWorkspaceRoot(_ workspace: [String: Any], expected: URL) th
     return expected
 }
 
-private func validateArtifact(_ artifact: [String: Any], workspaceRoot: URL) throws -> String {
-    try exactKeys(artifact, allowed: ["path", "size", "sha256", "nonEmpty", "kind"], label: "artifact")
+private func validateArtifact(_ artifact: [String: Any], workspaceRoot: URL, allowTimestampSeconds: Bool = false) throws -> String {
+    var allowed = ["path", "size", "sha256", "nonEmpty", "kind"]
+    if allowTimestampSeconds {
+        allowed.append("timestampSeconds")
+    }
+    try exactKeys(artifact, allowed: allowed, label: "artifact")
     let path = try artifact.requiredString("path")
     let size = try positiveInteger(artifact["size"], label: "artifact size")
     let expectedHash = try artifact.requiredString("sha256")
