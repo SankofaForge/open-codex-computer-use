@@ -29,7 +29,7 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
         .handoffOpenDesign: Route(kind: .openDesign, tool: "handoff_open_design"),
         .resolveAssetRoutes: Route(kind: .assetRouting, tool: "resolve_asset_routes"),
     ]
-    private var transports: [WorkflowBackendKind: ChildMCPTransport] = [:]
+    private var transports: [String: ChildMCPTransport] = [:]
     private let lock = NSLock()
 
     public init(configuration: WorkflowConfiguration, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
@@ -39,8 +39,26 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
     }
 
     public func dispatch(stage: WorkflowStage, arguments: [String: Any]) throws -> [String: Any] {
-        if stage == .preflight || stage == .validate {
+        if stage == .preflight {
             return ["stage": stage.rawValue, "status": "complete", "workspaceRoot": configuration.workspaceRoot]
+        }
+        if stage == .validate {
+            guard let manifestPath = arguments["manifestPath"] as? String else {
+                throw WorkflowStageDispatchError.backend(WorkflowErrorRecord(code: .invalidEvidence, message: "workflow_validate requires manifestPath"))
+            }
+            let manifestURL = URL(fileURLWithPath: manifestPath)
+            guard let data = try? Data(contentsOf: manifestURL) else {
+                throw WorkflowStageDispatchError.backend(WorkflowErrorRecord(code: .artifactMissing, message: "workflow manifest does not exist: \(manifestPath)"))
+            }
+            let report = try WorkflowEvidenceValidator.validateManifest(data: data, workspaceRoot: URL(fileURLWithPath: configuration.workspaceRoot))
+            return [
+                "stage": stage.rawValue,
+                "status": report.manifestStatus.rawValue,
+                "captureCellCount": report.captureCellCount,
+                "analysisCount": report.analysisCount,
+                "readyAssetRouteCount": report.readyAssetRouteCount,
+                "manifestPath": manifestPath,
+            ]
         }
         guard let route = routes[stage] else { throw WorkflowStageDispatchError.missingBackend(.designInspiration, stage) }
         guard let backend = configuration.backends.first(where: { $0.kind == route.kind }) else {
@@ -50,8 +68,19 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
             throw WorkflowStageDispatchError.missingTool(route.kind, route.tool, stage)
         }
         do {
-            let result = try transport(for: backend).callTool(route.tool, arguments: try jsonValue(arguments))
-            return ["stage": stage.rawValue, "backend": route.kind.rawValue, "tool": route.tool, "result": result.foundationObject]
+            var stageArguments = arguments
+            if stage == .resolveAssetRoutes { stageArguments["routeContractVersion"] = "asset-route.v1" }
+            let result = try transport(for: backend, runId: arguments["runId"] as? String ?? "default").callTool(route.tool, arguments: try jsonValue(stageArguments))
+            if case .object(let object) = result,
+               object["isError"]?.boolValue == true {
+                throw WorkflowStageDispatchError.backend(WorkflowErrorRecord(code: .backendFailure, message: "\(route.tool) returned isError", backend: backend.kind.rawValue))
+            }
+            var output: [String: Any] = ["stage": stage.rawValue, "backend": route.kind.rawValue, "tool": route.tool, "result": result.foundationObject]
+            if case .object(let object) = result, let structured = object["structuredContent"]?.foundationObject as? [String: Any] {
+                if let status = structured["status"] as? String { output["status"] = status }
+                if let manifestPath = structured["manifestPath"] as? String { output["manifestPath"] = manifestPath }
+            }
+            return output
         } catch let error as ChildMCPTransportError {
             throw WorkflowStageDispatchError.backend(WorkflowErrorRecord(code: .backendFailure, message: error.localizedDescription, backend: backend.kind.rawValue))
         }
@@ -62,10 +91,18 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
         active.forEach { try? $0.shutdown() }
     }
 
+    public func cancel(runId: String) {
+        lock.lock()
+        let active = transports.filter { $0.key.hasPrefix("\(runId)::") }.map(\.value)
+        lock.unlock()
+        active.forEach { $0.cancel() }
+    }
+
     deinit { shutdown() }
 
-    private func transport(for backend: WorkflowBackendConfiguration) throws -> ChildMCPTransport {
-        lock.lock(); if let existing = transports[backend.kind] { lock.unlock(); return existing }; lock.unlock()
+    private func transport(for backend: WorkflowBackendConfiguration, runId: String) throws -> ChildMCPTransport {
+        let key = "\(runId)::\(backend.kind.rawValue)"
+        lock.lock(); if let existing = transports[key] { lock.unlock(); return existing }; lock.unlock()
         let child = try ChildMCPTransport(configuration: ChildMCPBackendConfiguration(
             identifier: backend.kind.rawValue,
             executableURL: URL(fileURLWithPath: backend.command),
@@ -75,7 +112,7 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
             declaredToolNames: Set(backend.declaredTools)
         ))
         try child.start(environment: environment)
-        lock.lock(); transports[backend.kind] = child; lock.unlock()
+        lock.lock(); transports[key] = child; lock.unlock()
         return child
     }
 

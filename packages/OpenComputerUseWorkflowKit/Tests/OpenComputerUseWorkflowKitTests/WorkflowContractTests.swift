@@ -12,7 +12,7 @@ final class WorkflowContractTests: XCTestCase {
         )
         let object = try jsonObject(envelope)
 
-        XCTAssertEqual(object["schemaVersion"] as? String, "workflow-control.v1")
+        XCTAssertEqual(object["schemaVersion"] as? String, "workflow-control.v2")
         XCTAssertEqual(object["stage"] as? String, "capture_site_motion")
         XCTAssertEqual(object["status"] as? String, "partial")
         XCTAssertEqual((object["gaps"] as? [[String: Any]])?.count, 1)

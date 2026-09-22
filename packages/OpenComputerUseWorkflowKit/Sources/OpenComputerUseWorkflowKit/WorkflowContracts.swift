@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WorkflowContractVersion {
-    public static let control = "workflow-control.v1"
+    public static let control = "workflow-control.v2"
     public static let manifest = "workflow-manifest.v2"
     public static let motionAnalysis = "motion-analysis.v2"
     public static let capability = 1
@@ -26,9 +26,40 @@ public enum WorkflowRunStatus: String, CaseIterable, Codable, Sendable {
     case partial
     case blocked
     case complete
+    case cancelled
 }
 
-public enum WorkflowErrorCode: String, CaseIterable, Codable, Sendable {
+public struct WorkflowStageContext: @unchecked Sendable {
+    public let runId: String
+    public let workspaceRoot: String
+    public let taskProfile: String
+    public let inputs: [String: Any]
+    public let previousResults: [WorkflowStage: [String: Any]]
+
+    public init(runId: String, workspaceRoot: String, taskProfile: String, inputs: [String: Any], previousResults: [WorkflowStage: [String: Any]] = [:]) {
+        self.runId = runId
+        self.workspaceRoot = workspaceRoot
+        self.taskProfile = taskProfile
+        self.inputs = inputs
+        self.previousResults = previousResults
+    }
+
+    public func arguments(for stage: WorkflowStage) -> [String: Any] {
+        var arguments = inputs
+        arguments["runId"] = runId
+        arguments["workspaceRoot"] = workspaceRoot
+        arguments["taskProfile"] = taskProfile
+        if !previousResults.isEmpty {
+            arguments["previousResults"] = previousResults.reduce(into: [String: Any]()) { result, entry in
+                result[entry.key.rawValue] = entry.value
+            }
+        }
+        arguments["stage"] = stage.rawValue
+        return arguments
+    }
+}
+
+public enum WorkflowErrorCode: String, CaseIterable, Codable, Hashable, Sendable {
     case invalidConfiguration = "invalid_configuration"
     case invalidEvidence = "invalid_evidence"
     case unsupportedSchema = "unsupported_schema"

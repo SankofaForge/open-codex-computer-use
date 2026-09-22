@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 /// JSON values accepted by the workflow boundary. Keeping this type independent
 /// from the OCU tool result types lets workflow backends evolve separately.
@@ -31,6 +34,11 @@ public enum WorkflowJSONValue: Sendable, Equatable {
             return nil
         }
 
+        return value
+    }
+
+    public var boolValue: Bool? {
+        guard case .bool(let value) = self else { return nil }
         return value
     }
 
@@ -88,17 +96,20 @@ public struct ChildMCPTimeouts: Sendable, Equatable {
     public let request: TimeInterval
     public let shutdown: TimeInterval
     public let maximumResponseBytes: Int
+    public let maximumDiagnosticBytes: Int
 
     public init(
         startup: TimeInterval = 15,
         request: TimeInterval = 60,
         shutdown: TimeInterval = 5,
-        maximumResponseBytes: Int = 1_048_576
+        maximumResponseBytes: Int = 1_048_576,
+        maximumDiagnosticBytes: Int = 64 * 1024
     ) {
         self.startup = startup
         self.request = request
         self.shutdown = shutdown
         self.maximumResponseBytes = maximumResponseBytes
+        self.maximumDiagnosticBytes = maximumDiagnosticBytes
     }
 
     fileprivate func validate() throws {
@@ -106,7 +117,7 @@ public struct ChildMCPTimeouts: Sendable, Equatable {
             throw ChildMCPTransportError.invalidConfiguration("Child-MCP timeouts must be greater than zero.")
         }
 
-        guard maximumResponseBytes > 0 else {
+        guard maximumResponseBytes > 0, maximumDiagnosticBytes > 0 else {
             throw ChildMCPTransportError.invalidConfiguration("maximumResponseBytes must be greater than zero.")
         }
     }
@@ -273,6 +284,7 @@ public final class ChildMCPTransport: @unchecked Sendable {
     private var nextRequestID = 1
     private var cancelled = false
     private var tools: [String: ChildMCPTool] = [:]
+    private var diagnosticBytes = 0
 
     public init(configuration: ChildMCPBackendConfiguration) throws {
         try configuration.validate()
@@ -320,6 +332,9 @@ public final class ChildMCPTransport: @unchecked Sendable {
         } catch {
             throw ChildMCPTransportError.processLaunchFailed(String(describing: error))
         }
+#if canImport(Darwin)
+        _ = Darwin.setpgid(process.processIdentifier, process.processIdentifier)
+#endif
 
         let newSession = ChildMCPProcessSession(
             process: process,
@@ -332,6 +347,7 @@ public final class ChildMCPTransport: @unchecked Sendable {
         stateLock.lock()
         session = newSession
         cancelled = false
+        diagnosticBytes = 0
         stateLock.unlock()
 
         do {
@@ -441,18 +457,28 @@ public final class ChildMCPTransport: @unchecked Sendable {
     }
 
     private func filteredEnvironment(from environment: [String: String]) -> [String: String] {
-        environment.filter { configuration.permittedEnvironmentVariableNames.contains($0.key) }
+        let baselineNames = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"]
+        let allowed = Set(baselineNames).union(configuration.permittedEnvironmentVariableNames)
+        return environment.filter { allowed.contains($0.key) }
     }
 
     private func configureDiagnostics(for session: ChildMCPProcessSession) {
-        session.error.readabilityHandler = { [configuration] handle in
+        session.error.readabilityHandler = { [weak self, configuration] handle in
             let data = handle.availableData
             guard !data.isEmpty else {
                 handle.readabilityHandler = nil
                 return
             }
 
-            configuration.diagnosticSink(ChildMCPDiagnostic(backendIdentifier: configuration.identifier, data: data))
+            guard let self else { return }
+            self.stateLock.lock()
+            let remaining = max(0, configuration.timeouts.maximumDiagnosticBytes - self.diagnosticBytes)
+            let bounded = data.prefix(remaining)
+            self.diagnosticBytes += bounded.count
+            self.stateLock.unlock()
+            guard !bounded.isEmpty else { return }
+            let redacted = Self.redactDiagnostic(Data(bounded))
+            configuration.diagnosticSink(ChildMCPDiagnostic(backendIdentifier: configuration.identifier, data: redacted))
         }
     }
 
@@ -496,7 +522,31 @@ public final class ChildMCPTransport: @unchecked Sendable {
         try? session.input.close()
         if session.process.isRunning {
             session.process.terminate()
+            _ = waitForExit(session.process, timeout: min(configuration.timeouts.shutdown, 0.25))
+            if session.process.isRunning {
+                killProcessGroup(session.process)
+            }
         }
+    }
+
+    private static func redactDiagnostic(_ data: Data) -> Data {
+        guard var text = String(data: data, encoding: .utf8) else { return data }
+        let patterns = [
+            "(?i)(api[_-]?key|token|secret|password)(\\s*[=:]\\s*)[^\\s,;]+",
+            "(?i)bearer\\s+[A-Za-z0-9._-]+",
+        ]
+        for pattern in patterns {
+            text = text.replacingOccurrences(of: pattern, with: "$1$2[REDACTED]", options: .regularExpression)
+        }
+        return Data(text.utf8)
+    }
+
+    private func killProcessGroup(_ process: Process) {
+        #if canImport(Darwin)
+        Darwin.kill(-process.processIdentifier, SIGKILL)
+        #else
+        process.terminate()
+        #endif
     }
 
     private func requestLocked(
@@ -581,35 +631,36 @@ public final class ChildMCPTransport: @unchecked Sendable {
         timeout: TimeInterval,
         timeoutError: ChildMCPTransportError
     ) throws -> (result: WorkflowJSONValue?, error: ChildMCPBackendError?) {
-        let line = try readLine(from: session, timeout: timeout, timeoutError: timeoutError)
-
-        let value: WorkflowJSONValue
-        do {
-            let object = try JSONSerialization.jsonObject(with: line)
-            value = try WorkflowJSONValue(foundationValue: object)
-        } catch let error as ChildMCPTransportError {
-            throw error
-        } catch {
-            throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout contained invalid JSON-RPC: \(error.localizedDescription)")
+        while true {
+            let line = try readLine(from: session, timeout: timeout, timeoutError: timeoutError)
+            let value: WorkflowJSONValue
+            do {
+                let object = try JSONSerialization.jsonObject(with: line)
+                value = try WorkflowJSONValue(foundationValue: object)
+            } catch let error as ChildMCPTransportError {
+                throw error
+            } catch {
+                throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout contained invalid JSON-RPC: \(error.localizedDescription)")
+            }
+            guard case .object(let response) = value else {
+                throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout JSON-RPC message must be an object.")
+            }
+            guard response["jsonrpc"] == .string("2.0") else {
+                throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout message did not declare jsonrpc 2.0.")
+            }
+            guard let responseID = response["id"] else {
+                continue
+            }
+            guard responseID.intValue == expectedID else {
+                throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout response id did not match request \(expectedID).")
+            }
+            let result = response["result"]
+            let error = try parseBackendError(response["error"])
+            if result != nil, error != nil {
+                throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout response contained both result and error.")
+            }
+            return (result, error)
         }
-
-        guard case .object(let response) = value else {
-            throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout JSON-RPC message must be an object.")
-        }
-        guard response["jsonrpc"] == .string("2.0") else {
-            throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout message did not declare jsonrpc 2.0.")
-        }
-        guard response["id"]?.intValue == expectedID else {
-            throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout response id did not match request \(expectedID).")
-        }
-
-        let result = response["result"]
-        let error = try parseBackendError(response["error"])
-        if result != nil, error != nil {
-            throw ChildMCPTransportError.malformedStandardOutput("Child-MCP stdout response contained both result and error.")
-        }
-
-        return (result, error)
     }
 
     private func readLine(

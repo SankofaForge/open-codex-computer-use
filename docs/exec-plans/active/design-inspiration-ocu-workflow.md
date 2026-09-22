@@ -34,7 +34,7 @@ MCP backends without changing the existing nine-tool `mcp` surface.
 
 ## Milestones
 
-1. Contract: define tool schemas, `workflow-control.v1`, run-state transitions,
+1. Contract: define tool schemas, `workflow-control.v2`, run-state transitions,
    capability records, error taxonomy, pinned schema fixtures, and parity
    requirements.
 2. Validation and transport: port pure evidence validation and implement child
@@ -71,9 +71,10 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
 - [x] Add package/product wiring, an initial `workflow-mcp` scaffold,
   documentation, provenance notice, active plan, and reserved `workflow-smoke`
   entry point.
-- [ ] Implement contract and validator layers.
-- [ ] Implement transport, server, approvals, and adapters.
-- [ ] Replace the placeholder smoke target and complete integration QA.
+- [x] Implement contract and validator layers.
+- [x] Implement child transport and asynchronous workflow server lifecycle.
+- [ ] Implement approvals and external adapters.
+- [x] Replace the placeholder smoke target with deterministic lifecycle coverage.
 - [x] Split the SwiftPM graph by platform so Linux can test the Foundation-only
   workflow kit while macOS retains the complete OCU package gate.
 
@@ -83,7 +84,7 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
   scaffold is documented as non-production until transport, validation, and
   app-approval boundaries exist; the existing MCP tool surface remains
   compatible.
-- 2026-09-21: Keep workflow control data in `workflow-control.v1` rather than
+- 2026-09-21: Keep workflow control data in `workflow-control.v2` rather than
   extending strict `workflow-manifest.v2`.
 
 ## Contract milestone
@@ -94,3 +95,9 @@ macOS acceptance gate remain.
 The contract layer owns control envelopes, backend configuration, strict v2
 evidence validation, artifact containment and SHA-256 checks, four-cell visual
 evidence, Open Design evidence, and fail-closed asset-route readiness.
+
+## macOS GUI acceptance boundary
+
+- `SkyClickLiveTests` is the direct low-level XCTest gate. It runs CoreGraphics/SkyLight from the XCTest host, so its test-only Accessibility and Screen Recording permissions belong to the app that launches XCTest.
+- `make sky-click-app-agent-acceptance` is the production path. It builds `Open Computer Use.app`, invokes the existing CLI proxy, and exercises LaunchServices plus the Unix-domain app-agent IPC path. Production permissions belong only to `Open Computer Use.app`.
+- Neither gate is valid from a headless process, SSH tty, or remote shell without a logged-in macOS GUI session.

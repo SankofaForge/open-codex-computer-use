@@ -155,8 +155,11 @@ public enum WorkflowEvidenceValidator {
             let route = try object(rawRoute, label: "asset route")
             try exactKeys(route, allowed: ["assetId", "requestedRoute", "actualRoute", "status", "capability", "acceptance", "outputs", "validatedOutputs", "reducedMotion", "blockedReason"], label: "asset route")
             _ = try route.requiredString("assetId")
-            try safeHTTPURL(route.requiredString("requestedRoute"), label: "asset requestedRoute")
-            try safeHTTPURL(route.requiredString("actualRoute"), label: "asset actualRoute")
+            let requestedRoute = try route.requiredString("requestedRoute")
+            let actualRoute = try route.requiredString("actualRoute")
+            try safeHTTPURL(requestedRoute, label: "asset requestedRoute")
+            try safeHTTPURL(actualRoute, label: "asset actualRoute")
+            try validateAssetRouteContract(route, requested: requestedRoute, actual: actualRoute)
             let status = try route.requiredEnum("status", values: ["ready", "blocked"])
             try require(route["capability"] is [String: Any], .invalidEvidence, "asset capability evidence is required")
             try require(route["acceptance"] is [String: Any], .invalidEvidence, "asset route acceptance is required")
@@ -245,9 +248,10 @@ public struct MotionAnalysisValidationResult: Equatable, Sendable {
 
 private func verifiedWorkspaceRoot(_ workspace: [String: Any], expected: URL) throws -> URL {
     try exactKeys(workspace, allowed: ["root"], label: "workspace")
-    let declared = URL(fileURLWithPath: try workspace.requiredString("root")).standardizedFileURL
+    let declared = URL(fileURLWithPath: try workspace.requiredString("root")).resolvingSymlinksInPath().standardizedFileURL
     let expected = expected.resolvingSymlinksInPath().standardizedFileURL
     try require(!declared.path.isEmpty && FileManager.default.fileExists(atPath: expected.path), .artifactOutsideWorkspace, "manifest workspace root is not available")
+    try require(declared.path == expected.path, .artifactOutsideWorkspace, "manifest workspace root does not match expected root")
     return expected
 }
 
@@ -283,6 +287,18 @@ private func validateRedactedOpenDesignInput(_ value: String) throws {
     try require(!lowercased.contains(".env") && !lowercased.contains("api_key") && !lowercased.contains("token="), .invalidEvidence, "Open Design redactedInputs contain sensitive material")
 }
 
+private func validateAssetRouteContract(_ route: [String: Any], requested: String, actual: String) throws {
+    let syntheticPrefix = "https://asset-route.invalid/"
+    let usesSynthetic = requested.hasPrefix(syntheticPrefix) || actual.hasPrefix(syntheticPrefix)
+    guard usesSynthetic else { return }
+    let pattern = #"^https://asset-route\.invalid/(requested|actual|blocked)/(blender|brief-to-lottie|lottie-creator|svgator|glaxnimate)$"#
+    let validRequested = requested.range(of: pattern, options: .regularExpression) != nil
+    let validActual = actual.range(of: pattern, options: .regularExpression) != nil
+    try require(validRequested && validActual, .invalidEvidence, "synthetic asset routes must use asset-route.v1 identifiers")
+    let capability = try route.requiredObject("capability")
+    try require(capability["routeContractVersion"] as? String == "asset-route.v1", .invalidEvidence, "synthetic asset routes require asset-route.v1 capability metadata")
+}
+
 private func exactKeys(_ object: [String: Any], allowed: Set<String>, label: String) throws {
     let unknown = Set(object.keys).subtracting(allowed)
     try require(unknown.isEmpty, .invalidEvidence, "\(label) has unknown fields: \(unknown.sorted().joined(separator: ", "))")
@@ -309,6 +325,20 @@ private func safeHTTPURL(_ value: String, label: String) throws {
           components.user == nil,
           components.password == nil else {
         throw WorkflowContractError(.invalidEvidence, "\(label) must be a safe http(s) URL")
+    }
+    let hostname = (components.host ?? "").lowercased()
+    try require(hostname != "localhost" && hostname != "localhost.localdomain" && !hostname.hasSuffix(".local"), .invalidEvidence, "\(label) must not target a private host")
+    if hostname.contains(":") {
+        let privateIPv6 = hostname == "::1" || hostname.hasPrefix("fc") || hostname.hasPrefix("fd") || hostname.hasPrefix("fe80") || hostname.hasPrefix("::ffff:")
+        try require(!privateIPv6, .invalidEvidence, "\(label) must not target a private host")
+    } else {
+        let parts = hostname.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4 {
+            let first = parts[0]
+            let second = parts[1]
+            let privateIPv4 = first == 0 || first == 10 || first == 127 || (first == 100 && (64...127).contains(second)) || (first == 169 && second == 254) || (first == 172 && (16...31).contains(second)) || (first == 192 && (second == 0 || second == 168)) || (first == 198 && (18...19).contains(second)) || first >= 224
+            try require(!privateIPv4, .invalidEvidence, "\(label) must not target a private host")
+        }
     }
 }
 
