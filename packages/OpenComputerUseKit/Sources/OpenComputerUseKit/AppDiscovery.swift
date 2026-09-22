@@ -145,6 +145,20 @@ enum AppDiscovery {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let running = runningApps()
 
+        if let processIdentifier = processIdentifierQuery(normalizedQuery) {
+            guard let match = running.first(where: { $0.pid == processIdentifier }) else {
+                throw ComputerUseError.appNotFound(normalizedQuery)
+            }
+
+            if let bundleIdentifier = match.bundleIdentifier,
+               AppSafetyPolicy.isBlocked(bundleIdentifier: bundleIdentifier)
+            {
+                throw AppSafetyPolicy.permissionDenied(bundleIdentifier: bundleIdentifier)
+            }
+
+            return match
+        }
+
         if let bundleIdentifier = blockedBundleIdentifier(forQuery: normalizedQuery) {
             throw AppSafetyPolicy.permissionDenied(bundleIdentifier: bundleIdentifier)
         }
@@ -164,6 +178,21 @@ enum AppDiscovery {
         }
 
         throw ComputerUseError.appNotFound(normalizedQuery)
+    }
+
+    static func processIdentifierQuery(_ query: String) -> pid_t? {
+        let prefix = "pid:"
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedQuery.hasPrefix(prefix) else {
+            return nil
+        }
+
+        let rawValue = normalizedQuery.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int32(rawValue), value > 0 else {
+            return nil
+        }
+
+        return pid_t(value)
     }
 
     struct ResolutionCandidate {

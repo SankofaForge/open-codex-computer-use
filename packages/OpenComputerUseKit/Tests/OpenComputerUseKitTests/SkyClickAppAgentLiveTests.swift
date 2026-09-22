@@ -7,7 +7,7 @@ import XCTest
 @testable import OpenComputerUseKit
 
 @MainActor
-final class SkyClickLiveTests: XCTestCase {
+final class SkyClickAppAgentLiveTests: XCTestCase {
     private struct WindowRecord {
         let id: CGWindowID
         let pid: pid_t
@@ -16,8 +16,8 @@ final class SkyClickLiveTests: XCTestCase {
     }
 
     func testCoveredChromeReceivesExactlyOneSkyClickWithoutForegroundSideEffects() throws {
-        guard ProcessInfo.processInfo.environment["OPEN_COMPUTER_USE_RUN_SKY_CLICK_LIVE_TEST"] == "1" else {
-            throw XCTSkip("Set OPEN_COMPUTER_USE_RUN_SKY_CLICK_LIVE_TEST=1 to run the isolated Chrome live test")
+        guard ProcessInfo.processInfo.environment["OPEN_COMPUTER_USE_RUN_SKY_CLICK_APP_AGENT_TEST"] == "1" else {
+            throw XCTSkip("Set OPEN_COMPUTER_USE_RUN_SKY_CLICK_APP_AGENT_TEST=1 to run the production app-agent Chrome live test")
         }
         let spi = SkyLightSPI.shared
         guard spi.capability.isAvailable else {
@@ -178,18 +178,14 @@ final class SkyClickLiveTests: XCTestCase {
             y: screenPoint.y - coveredWindow.bounds.minY
         )
 
-        try SkyClickDispatcher.click(
-            target: SkyClickTarget(
-                screenPoint: screenPoint,
-                windowPoint: windowPoint,
-                windowBounds: coveredWindow.bounds,
-                windowID: coveredWindow.id,
-                pid: coveredWindow.pid
-            ),
-            clickCount: 1,
-            spi: spi
+        let target = SkyClickTarget(
+            screenPoint: screenPoint,
+            windowPoint: windowPoint,
+            windowBounds: coveredWindow.bounds,
+            windowID: coveredWindow.id,
+            pid: coveredWindow.pid
         )
-        print("sky_click live test: event recipe dispatched")
+        try runAppAgentClick(target: target)
 
         let clickedWindow = try waitForWindow(pid: readyWindow.pid, nameContaining: "ocu-sky-click-clicked-")
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
@@ -303,6 +299,78 @@ final class SkyClickLiveTests: XCTestCase {
             return true
         }
         return try XCTUnwrap(match)
+    }
+
+    private func runAppAgentClick(target: SkyClickTarget) throws {
+        let cli = Self.packageRoot
+            .appendingPathComponent(".build/debug/OpenComputerUse")
+        guard FileManager.default.isExecutableFile(atPath: cli.path) else {
+            throw XCTSkip("Build OpenComputerUse before running the app-agent live test")
+        }
+
+        let appBundle = Self.packageRoot
+            .appendingPathComponent("dist/Open Computer Use (Dev).app")
+        guard FileManager.default.fileExists(atPath: appBundle.path) else {
+            throw XCTSkip("Build dist/Open Computer Use (Dev).app before running the app-agent live test")
+        }
+
+        let arguments: [String: Any] = [
+            "app": "pid:\(target.pid)",
+            // The click tool accepts screenshot-local coordinates. The test
+            // target also records the global screen point for post-action
+            // invariants, but passing it here would make coordinates outside
+            // the snapshot window when the window is offset on screen.
+            "x": target.windowPoint.x,
+            "y": target.windowPoint.y,
+            "click_count": 1,
+            "mouse_button": "left",
+            "click_method": "sky_click",
+        ]
+        let argumentsData = try JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys])
+        let argumentsJSON = try XCTUnwrap(String(data: argumentsData, encoding: .utf8))
+        let process = Process()
+        process.executableURL = cli
+        process.arguments = ["call", "click", "--args", argumentsJSON]
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "OPEN_COMPUTER_USE_DISABLE_APP_AGENT_PROXY")
+        environment["OPEN_COMPUTER_USE_AGENT_SOCKET_NAMESPACE"] = "sky-click-app-agent-\(UUID().uuidString)"
+        process.environment = environment
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+
+        let deadline = Date().addingTimeInterval(30)
+        while process.isRunning, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+            process.waitUntilExit()
+            let stdoutText = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let stderrText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            throw ComputerUseError.message(
+                "app-agent CLI timed out after 30 seconds; stdout=\(String(reflecting: stdoutText)); stderr=\(String(reflecting: stderrText))"
+            )
+        }
+        process.waitUntilExit()
+
+        let stdoutText = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderrText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            throw ComputerUseError.message(
+                "app-agent CLI failed with status \(process.terminationStatus); stdout=\(String(reflecting: stdoutText)); stderr=\(String(reflecting: stderrText))"
+            )
+        }
+        let responseObject = try JSONSerialization.jsonObject(with: Data(stdoutText.utf8))
+        let response = try XCTUnwrap(responseObject as? [String: Any])
+        guard let isError = response["isError"] as? Bool, !isError else {
+            throw ComputerUseError.message(
+                "app-agent CLI returned no successful tool result; stdout=\(String(reflecting: stdoutText)); stderr=\(String(reflecting: stderrText))"
+            )
+        }
+        print("sky_click app-agent test: CLI request completed through Open Computer Use.app")
     }
 
     private func stop(_ process: Process) {
@@ -479,9 +547,16 @@ private func windowReadinessDiagnostic(
     let observed = matchingWindows.map {
         "id=\($0.id),pid=\($0.pid),name=\(String(reflecting: $0.name)),bounds=\($0.bounds)"
     }.joined(separator: "; ")
-    let processState = process.map {
-        "running=\($0.isRunning),status=\($0.terminationStatus),termination-reason=\($0.terminationReason.rawValue)"
-    } ?? "not-observed"
+    let processState: String
+    if let process {
+        if process.isRunning {
+            processState = "running=true,status=unavailable,termination-reason=unavailable"
+        } else {
+            processState = "running=false,status=\(process.terminationStatus),termination-reason=\(process.terminationReason.rawValue)"
+        }
+    } else {
+        processState = "not-observed"
+    }
     return [
         "Chrome window readiness failure (reason=\(reason), marker=\(marker))",
         "pid=\(pid.map(String.init) ?? "unknown")",

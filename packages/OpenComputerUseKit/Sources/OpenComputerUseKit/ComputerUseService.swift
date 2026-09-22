@@ -645,11 +645,17 @@ public final class ComputerUseService {
             throw ComputerUseError.invalidArguments("click requires either element_index or x/y")
         }
 
+        if clickMethod == .skyClick {
+            var content = snapshotResult(for: snapshot, style: .actionResult).content
+            content.insert(
+                .text("sky_click dispatched; post-action snapshot refresh was omitted to avoid activating or blocking on the covered target."),
+                at: min(1, content.count)
+            )
+            return ToolCallResult(content: content)
+        }
+
         return snapshotResult(
-            for: try refreshSnapshot(
-                for: query,
-                recoveryPolicy: clickActionSnapshotRecoveryPolicy(for: clickMethod)
-            ),
+            for: try refreshSnapshot(for: query, recoveryPolicy: clickActionSnapshotRecoveryPolicy(for: clickMethod)),
             style: .actionResult
         )
     }

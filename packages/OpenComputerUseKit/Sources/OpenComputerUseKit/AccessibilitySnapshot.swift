@@ -527,7 +527,9 @@ func preferredWindowCaptureCandidate(_ candidates: [WindowCaptureCandidate], tit
     guard let titleHint, !titleHint.isEmpty,
           let hinted = usable.first(where: { $0.title == titleHint })
     else {
-        return usable.first
+        return usable.max { lhs, rhs in
+            lhs.area < rhs.area
+        }
     }
 
     guard let frontmost = usable.first else {

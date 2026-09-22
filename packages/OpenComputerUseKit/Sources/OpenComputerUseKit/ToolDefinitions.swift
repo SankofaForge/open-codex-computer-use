@@ -36,7 +36,7 @@ public enum ToolDefinitions {
             annotations: defaultAnnotations(),
             inputSchema: objectSchema(
                 properties: [
-                    "app": stringProperty(description: "App name or bundle identifier"),
+                    "app": stringProperty(description: "App name, bundle identifier, or explicit running-process selector pid:<pid>"),
                     "element_index": stringProperty(description: "Element index to click"),
                     "x": numberProperty(description: "X coordinate in screenshot pixel coordinates"),
                     "y": numberProperty(description: "Y coordinate in screenshot pixel coordinates"),

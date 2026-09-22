@@ -219,7 +219,10 @@ enum SkyClickDispatcher {
 
         let localBounds = CGRect(origin: .zero, size: target.windowBounds.size)
         guard localBounds.contains(target.windowPoint) else {
-            throw ComputerUseError.message("sky_click target is outside the snapshot window bounds")
+            throw ComputerUseError.message(
+                "sky_click target is outside the snapshot window bounds "
+                    + "(windowPoint=\(target.windowPoint), windowSize=\(target.windowBounds.size))"
+            )
         }
 
         let windowInfo = CGWindowListCopyWindowInfo(

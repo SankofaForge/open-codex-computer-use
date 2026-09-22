@@ -3,7 +3,7 @@ SLUG ?=
 AGENTS ?= claude,codex
 SCENARIO ?= list-apps
 
-.PHONY: init build app test smoke workflow-smoke stress agent-smoke check-docs check-repo ci release-package npm-build npm-publish new-history new-plan
+.PHONY: init build app test smoke sky-click-app-agent-acceptance workflow-smoke stress agent-smoke check-docs check-repo ci release-package npm-build npm-publish new-history new-plan
 
 init:
 	@if [ -z "$(PROJECT)" ]; then echo "用法: make init PROJECT=项目名"; exit 1; fi
@@ -21,8 +21,11 @@ test:
 smoke:
 	./scripts/run-tool-smoke-tests.sh
 
+sky-click-app-agent-acceptance:
+	./scripts/run-sky-click-app-agent-acceptance.sh
+
 workflow-smoke:
-	swift test --filter WorkflowChildMCPDispatcherTests
+	swift test --filter 'WorkflowMCPServerTests|WorkflowChildMCPDispatcherTests|ChildMCPTransportTests'
 
 stress:
 	./scripts/run-tool-stress-tests.sh

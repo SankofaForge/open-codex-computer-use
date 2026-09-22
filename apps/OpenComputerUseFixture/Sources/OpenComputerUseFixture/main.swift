@@ -123,12 +123,16 @@ final class FixtureAppDelegate: NSObject, NSApplicationDelegate, NSTextFieldDele
     }
 
     private func buildWindow() {
+        let defaultFrame = NSRect(x: 160, y: 180, width: 640, height: 620)
         window = NSWindow(
-            contentRect: NSRect(x: 160, y: 180, width: 640, height: 620),
+            contentRect: defaultFrame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
+        if let requestedFrame = fixtureWindowFrame(environment: ProcessInfo.processInfo.environment) {
+            window.setFrame(requestedFrame, display: false)
+        }
         window.title = "OpenComputerUseFixture"
         window.setAccessibilityIdentifier("fixture-window")
         window.delegate = self
@@ -474,4 +478,28 @@ private func fixtureHeadlessMode(environment: [String: String] = ProcessInfo.pro
     default:
         return false
     }
+}
+
+private func fixtureWindowFrame(environment: [String: String]) -> NSRect? {
+    guard
+        let value = environment["OPEN_COMPUTER_USE_FIXTURE_QUARTZ_FRAME"],
+        let frame = parseFixtureFrame(value),
+        let screen = NSScreen.main
+    else {
+        return nil
+    }
+    return NSRect(
+        x: frame.minX,
+        y: screen.frame.maxY - frame.maxY,
+        width: frame.width,
+        height: frame.height
+    )
+}
+
+private func parseFixtureFrame(_ value: String) -> CGRect? {
+    let components = value.split(separator: ",").compactMap { Double($0) }
+    guard components.count == 4, components[2] > 0, components[3] > 0 else {
+        return nil
+    }
+    return CGRect(x: components[0], y: components[1], width: components[2], height: components[3])
 }

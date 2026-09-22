@@ -391,6 +391,14 @@ final class OpenComputerUseKitTests: XCTestCase {
         XCTAssertNil(AppDiscovery.bestResolutionIndex(of: [], matching: "Safari"))
     }
 
+    func testProcessIdentifierQueryParsesPositivePidsOnly() {
+        XCTAssertEqual(AppDiscovery.processIdentifierQuery("pid:1234"), 1234)
+        XCTAssertEqual(AppDiscovery.processIdentifierQuery(" PID: 5678 "), 5678)
+        XCTAssertNil(AppDiscovery.processIdentifierQuery("Google Chrome"))
+        XCTAssertNil(AppDiscovery.processIdentifierQuery("pid:0"))
+        XCTAssertNil(AppDiscovery.processIdentifierQuery("pid:not-a-pid"))
+    }
+
     func testMacOSAppAgentProxyDecisionKeepsNonAutomationCommandsLocal() {
         for command in [
             OpenComputerUseCLICommand.turnEnded(payload: nil),
@@ -2079,6 +2087,29 @@ final class OpenComputerUseKitTests: XCTestCase {
         let selected = preferredWindowCaptureCandidate([other, main], titleHint: "Nomi")
 
         XCTAssertEqual(selected?.windowID, main.windowID)
+    }
+
+    func testWindowCapturePrefersLargestWindowWhenTitleHintIsUnavailable() {
+        let content = WindowCaptureCandidate(
+            windowID: 1,
+            layer: 0,
+            bounds: CGRect(x: 110, y: 190, width: 400, height: 300),
+            title: "ocu-sky-click-ready",
+            area: 120_000,
+            frontToBackIndex: 1
+        )
+        let narrowStrip = WindowCaptureCandidate(
+            windowID: 2,
+            layer: 0,
+            bounds: CGRect(x: 0, y: 0, width: 1_440, height: 41),
+            title: nil,
+            area: 59_040,
+            frontToBackIndex: 0
+        )
+
+        let selected = preferredWindowCaptureCandidate([narrowStrip, content], titleHint: nil)
+
+        XCTAssertEqual(selected?.windowID, content.windowID)
     }
 
     func testListTraversalPrefersVisibleChildrenAndReadsContents() {
