@@ -150,6 +150,7 @@ public struct WorkflowControlEnvelope: Codable, Equatable, Sendable {
 public enum WorkflowBackendKind: String, Codable, Sendable {
     case designInspiration = "design-inspiration"
     case siteMotionCapture = "site-motion-capture"
+    case browserUseCapture = "browser-use-capture"
     case openDesign = "open-design"
     case frameExtraction = "frame-extraction"
     case assetRouting = "asset-routing"
@@ -202,6 +203,12 @@ public struct WorkflowBackendConfiguration: Codable, Equatable, Sendable {
         }
         guard arguments.allSatisfy({ !containsSecretAssignment($0) }) else {
             throw WorkflowContractError(.invalidConfiguration, "backend arguments must not contain credential assignments")
+        }
+        if kind == .browserUseCapture {
+            let requiredTools: Set<String> = ["check_capture_gpu", "capture_site_motion"]
+            guard Set(declaredTools) == requiredTools else {
+                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must declare exactly check_capture_gpu and capture_site_motion")
+            }
         }
         if kind == .openDesign, launchPolicy != .direct {
             throw WorkflowContractError(.invalidConfiguration, "open-design must use its generated direct command, not a secret wrapper")

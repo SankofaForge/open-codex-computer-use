@@ -18,8 +18,19 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         ]))
 
         XCTAssertThrowsError(try dispatcher.dispatch(stage: .captureSiteMotion, arguments: [:])) { error in
-            XCTAssertEqual(error as? WorkflowStageDispatchError, .missingBackend(.siteMotionCapture, .captureSiteMotion))
+            XCTAssertEqual(error as? WorkflowStageDispatchError, .missingBackend(.browserUseCapture, .captureSiteMotion))
         }
+    }
+
+    func testDispatchesCaptureStagesThroughBrowserUseBackend() throws {
+        let dispatcher = try ConfiguredChildMCPStageDispatcher(configuration: browserUseConfiguration(), environment: ["WORKFLOW_MCP_FAKE_WORKFLOW": "1"])
+        defer { dispatcher.shutdown() }
+        XCTAssertEqual(try dispatcher.dispatch(stage: .checkCaptureGPU, arguments: [:])["backend"] as? String, "browser-use-capture")
+        XCTAssertEqual(try dispatcher.dispatch(stage: .captureSiteMotion, arguments: [:])["backend"] as? String, "browser-use-capture")
+    }
+
+    func testBrowserUseBackendRequiresBothBoundedTools() {
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(kind: .browserUseCapture, command: "browser-use-capture-mcp", declaredTools: ["check_capture_gpu"]).validate())
     }
 
     func testRejectsMissingDeclaredTool() throws {
@@ -35,6 +46,15 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
             command: try fakeBackendURL().path,
             permittedEnvironmentVariables: ["WORKFLOW_MCP_FAKE_WORKFLOW"],
             declaredTools: tools
+        )])
+    }
+
+    private func browserUseConfiguration() throws -> WorkflowConfiguration {
+        WorkflowConfiguration(workspaceRoot: ".", backends: [WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: try fakeBackendURL().path,
+            permittedEnvironmentVariables: ["WORKFLOW_MCP_FAKE_WORKFLOW", "BROWSER_USE_CHROMIUM_PATH"],
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
         )])
     }
 

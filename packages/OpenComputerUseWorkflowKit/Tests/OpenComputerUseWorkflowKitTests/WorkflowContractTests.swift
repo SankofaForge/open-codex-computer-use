@@ -33,6 +33,24 @@ final class WorkflowContractTests: XCTestCase {
         ).validate())
     }
 
+    func testBrowserUseCaptureConfigurationAllowsBrowserPathName() throws {
+        XCTAssertNoThrow(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: ["BROWSER_USE_CHROMIUM_PATH"],
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        ).validate())
+    }
+
+    func testBrowserUseCaptureConfigurationRejectsPathArgumentAssignment() {
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            arguments: ["BROWSER_USE_CHROMIUM_PATH=/usr/bin/chromium"],
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        ).validate())
+    }
+
     func testValidVisualImplementationFixturePasses() throws {
         let fixture = try WorkflowFixture.make()
         let report = try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root)

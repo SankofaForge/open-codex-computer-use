@@ -39,11 +39,11 @@ does not accept shell fragments or secret values in configuration.
       "declaredTools": ["design_search_references", "design_prepare_references", "design_extract_tokens"]
     },
     {
-      "kind": "site-motion-capture",
-      "command": "site-motion-capture-mcp",
+      "kind": "browser-use-capture",
+      "command": "browser-use-capture-mcp",
       "arguments": [],
       "workingDirectory": ".",
-      "permittedEnvironmentVariables": ["CAPTURE_SERVICE_API_KEY"],
+      "permittedEnvironmentVariables": ["BROWSER_USE_CHROMIUM_PATH"],
       "declaredTools": ["check_capture_gpu", "capture_site_motion"]
     },
     {
@@ -77,12 +77,20 @@ The host preserves the existing workflow evidence contract:
   `<workspaceRoot>/.workflow/checkpoints/<runId>.json`.
 - Capture artifacts remain under
   `artifacts/design-inspiration/site-motion-capture/`.
+- `BROWSER_USE_CHROMIUM_PATH` must identify an installed executable
+  non-Snap Chromium or Chrome binary. CPU compatibility and GPU-authoritative
+  capture are separate gates; a CPU-only probe cannot authorize evidence.
 - A manifest cannot report `complete` without the responsive and motion
   evidence matrix, Open Design handoff, and ready asset routes.
 - Model-provider selection remains harness-specific. The host only validates a
   bounded analysis result and does not silently choose another provider.
 - Asset routing remains declarative and fail-closed. A blocked asset is not
   replaced with CSS, a placeholder, or a different authoring tool.
+
+For blocked startup, provision a real browser, set `BROWSER_USE_CHROMIUM_PATH`,
+rerun the compatibility probe, and rerun the GPU check. Use
+`site-motion-capture` only as an explicit manual rollback; there is no
+automatic fallback.
 
 ## Smoke target
 
