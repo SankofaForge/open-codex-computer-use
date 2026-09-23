@@ -86,19 +86,22 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
 - [x] Replace the manual Browser Use compatibility override with explicit
   non-Snap executable validation, a locked compatibility probe, and an
   expiring GPU-check capability. Chrome startup, recording, instrumentation,
-  `nvidia-smi`, and hardware-backed WebGL now pass. Strict egress still blocks
-  the CPU compatibility gate.
+  `nvidia-smi`, and hardware-backed WebGL passed in the latest recorded probe.
+- [x] Report CPU browser functions, GPU support, and egress compliance as
+  separate compatibility results. Treat `domain-not-approved` as a recorded
+  proxy denial, not a CPU-function failure. Preserve fail-closed capture
+  authorization while the browser-wide egress boundary remains unverified.
 - [x] Replace the placeholder smoke target with deterministic lifecycle coverage.
 - [x] Split the SwiftPM graph by platform so Linux can test the Foundation-only
   workflow kit while macOS retains the complete OCU package gate.
 - [x] Implement the local stdio adapter's Vast-managed SSH bridge, remote
   worker invocation, artifact transfer, and cleanup lifecycle. The remote
   worker launches real Chrome explicitly and attaches through CDP.
-- [ ] Pass the remote CPU egress gate. Chrome-owned requests to six Google
-  background-service hosts remain denied by the exact-host SOCKS policy. A
-  bounded runtime sweep also tested Chrome for Testing and Microsoft Edge;
-  neither passed the same egress gate. Do not expand that policy without
-  reviewed authorization.
+- [ ] Verify the browser-wide egress boundary. The exact-host SOCKS proxy
+  denies unapproved requests, but current evidence does not prove that all
+  Chrome network paths use it. Earlier diagnostics recorded six Google
+  destinations without URL paths or request initiators, so do not attribute
+  them to Chrome services or expand the policy without reviewed authorization.
 
 ## Browser Use runner and acceptance boundary
 
@@ -113,13 +116,16 @@ the remote absolute path to a provisioned Chrome binary. The current dependency
 pin is `browser-use[video]==0.13.10`, locked with `uv.lock`.
 
 The compatibility probe must emit machine-readable JSON that records the
-browser executable, Browser Use release, Chrome version, separate CPU and GPU
-gate results, and a concrete failure reason when blocked. The CPU gate covers
-browser startup/CDP attachment, page evaluation and jank instrumentation,
-desktop/mobile viewport and reduced-motion control, recording, domain policy,
-and cleanup. The independent GPU gate checks both `nvidia-smi` and a
-hardware-backed WebGL renderer. A CPU pass alone must not produce an
-authoritative `gpu_check_id` or authorize capture.
+browser executable, Browser Use release, Chrome version, separate CPU, GPU,
+and egress results, and a concrete failure reason when blocked. The CPU gate
+covers browser startup/CDP attachment, page evaluation and jank
+instrumentation, viewport and reduced-motion control, recording, domain policy,
+and cleanup. The GPU gate checks both `nvidia-smi` and a hardware-backed WebGL
+renderer. The egress gate requires proof that all browser network paths use
+the approved boundary and that required browser security services are
+reachable; a SOCKS negative control or successful TCP connection alone is
+insufficient. A CPU or GPU pass alone must not produce an authoritative
+`gpu_check_id` or authorize capture.
 
 Test both blocked paths, including a CPU-gate failure while the GPU gate passes;
 the successful GPU result must not hide the CPU failure reason.
@@ -132,9 +138,11 @@ initial startup timeout. The rented runner now uses the real executable at
 path launches Chrome with an isolated profile and loopback CDP port, then
 attaches `BrowserSession` to the ready endpoint. Chrome starts on a local
 `data:` document to avoid the Browser Use `about:blank` logo request. Browser
-startup now passes, but strict egress still blocks six Chrome background-service
-hosts. Keep capture blocked until that CPU gate passes; do not add a manual
-compatibility override.
+startup now passes. The compatibility probe reports CPU functionality
+separately from proxy outcomes. It does not collect URL paths or initiators,
+and observations before or after fixture navigation do not establish request
+ownership. Keep capture blocked until CPU, GPU, and browser-wide egress checks
+pass; do not add a manual compatibility override.
 
 ### Runtime candidate check (2026-09-22)
 
@@ -149,17 +157,18 @@ proxy rejected `edge.microsoft.com` on ports 80 and 443, `www.bing.com`, and
 `nav-edge.smartscreen.microsoft.com`.
 
 No browser default or egress rule changed. The workflow remains blocked and
-must not issue a `gpu_check_id` until a candidate passes both gates.
+must not issue a `gpu_check_id` until CPU, GPU, and egress gates pass.
 
 ### Acceptance gates
 
 The runner provisioning checks currently show Chrome and an NVIDIA device to
 `nvidia-smi`. Exploratory startup and page-evaluation checks are not the full
-compatibility gate. Acceptance remains incomplete until the CPU gate and the
-hardware-WebGL GPU gate both pass, followed by consent and animated/WebGL
-fixtures for all four evidence cells. Each cell must retain the existing
-`capture-cell.v2`, WebM, jank, consent, path, size, and SHA-256 requirements and
-pass downstream `motion-analysis.v2` validation. The test suite must also cover
+compatibility gate. Acceptance remains incomplete until the CPU,
+hardware-WebGL GPU, and browser-wide egress gates pass, followed by consent and
+animated/WebGL fixtures for all four evidence cells. Each cell must retain the
+existing `capture-cell.v2`, WebM, jank, consent, path, size, and SHA-256
+requirements and pass downstream `motion-analysis.v2` validation. The test
+suite must also cover
 JSON-RPC routing, timeout, cancellation, domain rejection, profile isolation,
 and cleanup.
 

@@ -82,10 +82,13 @@ For the current runner, set `BROWSER_USE_CHROMIUM_PATH` to
 `/opt/google/chrome/chrome`. Do not use `/usr/bin/google-chrome`: it resolves
 through a launcher-script chain and is rejected. The adapter does not download
 a browser at runtime. Startup/CDP, recording, instrumentation, NVIDIA, and
-hardware-backed WebGL checks now pass on the rented runner. Capture remains
-blocked because the strict exact-host proxy rejects six Chrome background
-service destinations; none has been allowlisted. The adapter must keep
-`check_capture_gpu` blocked until the CPU egress gate also passes.
+hardware-backed WebGL checks passed in the latest recorded probe. The
+compatibility report separates CPU browser functions, GPU support, and egress
+compliance. The proxy records explicit policy denials, but it does not prove
+that every Chrome network path uses the proxy or that required browser
+security services are reachable. Egress therefore remains unverified, and the
+adapter must keep `check_capture_gpu` blocked until both facts are verified. No
+destination has been allowlisted.
 
 `captureBackend` selects one capture backend for both capture stages. If it is
 omitted, Browser Use is selected. A blocked Browser Use result remains blocked;
