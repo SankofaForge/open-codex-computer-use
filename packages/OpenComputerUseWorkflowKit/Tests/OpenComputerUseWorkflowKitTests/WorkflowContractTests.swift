@@ -73,6 +73,19 @@ final class WorkflowContractTests: XCTestCase {
         }
     }
 
+    func testBrowserUseTreatsChromiumPathAsEnvironmentNameOnly() {
+        XCTAssertTrue(browserUseEnvironmentVariables.contains("BROWSER_USE_CHROMIUM_PATH"))
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            arguments: ["BROWSER_USE_CHROMIUM_PATH=/usr/bin/chromium"],
+            permittedEnvironmentVariables: browserUseEnvironmentVariables,
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+    }
+
     func testExplicitCaptureBackendMustBeSupportedAndConfigured() throws {
         XCTAssertThrowsError(try WorkflowConfiguration(
             workspaceRoot: ".",
