@@ -18,7 +18,54 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         ]))
 
         XCTAssertThrowsError(try dispatcher.dispatch(stage: .captureSiteMotion, arguments: [:])) { error in
-            XCTAssertEqual(error as? WorkflowStageDispatchError, .missingBackend(.siteMotionCapture, .captureSiteMotion))
+            XCTAssertEqual(error as? WorkflowStageDispatchError, .missingBackend(.browserUseCapture, .captureSiteMotion))
+        }
+    }
+
+    func testBrowserUseCapabilityBlocksOnMissingRunnerConfigurationWithoutAutomaticRollback() throws {
+        let dispatcher = try ConfiguredChildMCPStageDispatcher(
+            configuration: browserUseConfiguration(includeSiteMotionRollback: true),
+            environment: [:]
+        )
+        defer { dispatcher.shutdown() }
+
+        let gpuOutput = try dispatcher.dispatch(stage: .checkCaptureGPU, arguments: [:])
+        XCTAssertEqual(gpuOutput["backend"] as? String, "browser-use-capture")
+        XCTAssertEqual(gpuOutput["tool"] as? String, "check_capture_gpu")
+        XCTAssertEqual(gpuOutput["status"] as? String, "blocked")
+        let gpuResult = try XCTUnwrap(gpuOutput["result"] as? [String: Any])
+        let gpuCapability = try XCTUnwrap(gpuResult["structuredContent"] as? [String: Any])
+        XCTAssertEqual(gpuCapability["status"] as? String, "blocked")
+        XCTAssertEqual((gpuCapability["capability"] as? [String: Any])?["available"] as? Bool, false)
+
+        let captureOutput = try dispatcher.dispatch(stage: .captureSiteMotion, arguments: [:])
+        XCTAssertEqual(captureOutput["backend"] as? String, "browser-use-capture")
+        XCTAssertEqual(captureOutput["tool"] as? String, "capture_site_motion")
+        XCTAssertEqual(captureOutput["status"] as? String, "blocked")
+    }
+
+    func testSiteMotionCaptureIsUsedOnlyWhenExplicitlySelected() throws {
+        let dispatcher = try ConfiguredChildMCPStageDispatcher(
+            configuration: siteMotionRollbackConfiguration(),
+            environment: [:]
+        )
+        defer { dispatcher.shutdown() }
+
+        let output = try dispatcher.dispatch(stage: .captureSiteMotion, arguments: [:])
+        XCTAssertEqual(output["backend"] as? String, "site-motion-capture")
+        XCTAssertEqual(output["tool"] as? String, "capture_site_motion")
+        XCTAssertEqual(output["status"] as? String, "complete")
+    }
+
+    func testConfiguredSiteMotionBackendIsNotAnImplicitFallback() throws {
+        let dispatcher = try ConfiguredChildMCPStageDispatcher(
+            configuration: WorkflowConfiguration(workspaceRoot: ".", backends: [try siteMotionBackend()]),
+            environment: [:]
+        )
+        defer { dispatcher.shutdown() }
+
+        XCTAssertThrowsError(try dispatcher.dispatch(stage: .checkCaptureGPU, arguments: [:])) { error in
+            XCTAssertEqual(error as? WorkflowStageDispatchError, .missingBackend(.browserUseCapture, .checkCaptureGPU))
         }
     }
 
@@ -29,6 +76,43 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         }
     }
 
+    func testBrowserUseBackendRequiresItsBoundedToolSurface() throws {
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: browserUseEnvironmentVariables,
+            declaredTools: ["check_capture_gpu"]
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+
+        XCTAssertNoThrow(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: browserUseEnvironmentVariables,
+            declaredTools: ["capture_site_motion", "check_capture_gpu"]
+        ).validate())
+
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: Array(browserUseEnvironmentVariables.dropLast()),
+            declaredTools: ["capture_site_motion", "check_capture_gpu"]
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+    }
+
+    func testCaptureBackendMustBeConfiguredWhenExplicitlySelected() throws {
+        XCTAssertThrowsError(try WorkflowConfiguration(
+            workspaceRoot: ".",
+            backends: [browserUseBackend()],
+            captureBackend: .siteMotionCapture
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+    }
+
     private func configuration(tools: [String] = ["design_search_references"]) throws -> WorkflowConfiguration {
         WorkflowConfiguration(workspaceRoot: ".", backends: [WorkflowBackendConfiguration(
             kind: .designInspiration,
@@ -36,6 +120,38 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
             permittedEnvironmentVariables: ["WORKFLOW_MCP_FAKE_WORKFLOW"],
             declaredTools: tools
         )])
+    }
+
+    private func browserUseConfiguration(includeSiteMotionRollback: Bool = false) throws -> WorkflowConfiguration {
+        var backends = [try browserUseBackend()]
+        if includeSiteMotionRollback {
+            backends.append(try siteMotionBackend())
+        }
+        return WorkflowConfiguration(workspaceRoot: ".", backends: backends)
+    }
+
+    private func siteMotionRollbackConfiguration() throws -> WorkflowConfiguration {
+        WorkflowConfiguration(workspaceRoot: ".", backends: [try siteMotionBackend()], captureBackend: .siteMotionCapture)
+    }
+
+    private func browserUseBackend() throws -> WorkflowBackendConfiguration {
+        WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: try fakeBackendURL().path,
+            arguments: ["--browser-use-fixture"],
+            permittedEnvironmentVariables: browserUseEnvironmentVariables,
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        )
+    }
+
+    private func siteMotionBackend() throws -> WorkflowBackendConfiguration {
+        WorkflowBackendConfiguration(
+            kind: .siteMotionCapture,
+            command: try fakeBackendURL().path,
+            arguments: ["--site-motion-fixture"],
+            permittedEnvironmentVariables: ["CAPTURE_SERVICE_API_KEY"],
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        )
     }
 
     private func fakeBackendURL() throws -> URL {
@@ -53,3 +169,9 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         throw NSError(domain: "WorkflowChildMCPDispatcherTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "fake backend executable not found"])
     }
 }
+
+private let browserUseEnvironmentVariables = [
+    "VAST_INSTANCE_ID",
+    "VAST_API_KEY",
+    "BROWSER_USE_CHROMIUM_PATH",
+]
