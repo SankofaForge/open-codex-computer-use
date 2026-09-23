@@ -1,5 +1,11 @@
 import Foundation
 
+private let browserUseCaptureRequiredEnvironmentVariables: Set<String> = [
+    "VAST_INSTANCE_ID",
+    "VAST_API_KEY",
+    "BROWSER_USE_CHROMIUM_PATH",
+]
+
 public enum WorkflowContractVersion {
     public static let control = "workflow-control.v2"
     public static let manifest = "workflow-manifest.v2"
@@ -209,6 +215,12 @@ public struct WorkflowBackendConfiguration: Codable, Equatable, Sendable {
             guard Set(declaredTools) == requiredTools else {
                 throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must declare exactly check_capture_gpu and capture_site_motion")
             }
+            guard !permittedEnvironmentVariables.contains("BROWSER_USE_CAPTURE_COMPATIBLE") else {
+                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture does not accept a manual compatibility override")
+            }
+            guard Set(permittedEnvironmentVariables) == browserUseCaptureRequiredEnvironmentVariables else {
+                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must permit exactly VAST_INSTANCE_ID, VAST_API_KEY, and BROWSER_USE_CHROMIUM_PATH")
+            }
         }
         if kind == .openDesign, launchPolicy != .direct {
             throw WorkflowContractError(.invalidConfiguration, "open-design must use its generated direct command, not a secret wrapper")
@@ -219,10 +231,12 @@ public struct WorkflowBackendConfiguration: Codable, Equatable, Sendable {
 public struct WorkflowConfiguration: Codable, Equatable, Sendable {
     public let workspaceRoot: String
     public let backends: [WorkflowBackendConfiguration]
+    public let captureBackend: WorkflowBackendKind?
 
-    public init(workspaceRoot: String, backends: [WorkflowBackendConfiguration]) {
+    public init(workspaceRoot: String, backends: [WorkflowBackendConfiguration], captureBackend: WorkflowBackendKind? = nil) {
         self.workspaceRoot = workspaceRoot
         self.backends = backends
+        self.captureBackend = captureBackend
     }
 
     public static func load(path: String) throws -> Self {
@@ -244,6 +258,7 @@ public struct WorkflowConfiguration: Codable, Equatable, Sendable {
             }
             let workspaceRoot: String?
             let backends: [Backend]
+            let captureBackend: WorkflowBackendKind?
         }
         let legacy = try decoder.decode(Legacy.self, from: data)
         let backends = try legacy.backends.map { backend in
@@ -259,7 +274,7 @@ public struct WorkflowConfiguration: Codable, Equatable, Sendable {
                 declaredTools: backend.declaredTools ?? []
             )
         }
-        let configuration = Self(workspaceRoot: legacy.workspaceRoot ?? ".", backends: backends)
+        let configuration = Self(workspaceRoot: legacy.workspaceRoot ?? ".", backends: backends, captureBackend: legacy.captureBackend)
         try configuration.validate()
         return configuration
     }
@@ -271,6 +286,14 @@ public struct WorkflowConfiguration: Codable, Equatable, Sendable {
         let kinds = backends.map(\.kind)
         guard kinds.count == Set(kinds).count else {
             throw WorkflowContractError(.invalidConfiguration, "workflow backend kinds must be unique")
+        }
+        if let captureBackend {
+            guard captureBackend == .browserUseCapture || captureBackend == .siteMotionCapture else {
+                throw WorkflowContractError(.invalidConfiguration, "captureBackend must be browser-use-capture or site-motion-capture")
+            }
+            guard kinds.contains(captureBackend) else {
+                throw WorkflowContractError(.invalidConfiguration, "captureBackend must reference a configured backend")
+            }
         }
         try backends.forEach { try $0.validate() }
     }

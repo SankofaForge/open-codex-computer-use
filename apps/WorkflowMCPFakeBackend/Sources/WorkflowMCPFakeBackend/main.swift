@@ -25,7 +25,7 @@ enum WorkflowMCPFakeBackend {
             case "notifications/initialized":
                 continue
             case "tools/list":
-                if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" {
+                if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" || captureFixture != nil {
                     respond(id: id, result: ["tools": workflowTools.map { ["name": $0] }])
                     continue
                 }
@@ -49,6 +49,26 @@ enum WorkflowMCPFakeBackend {
     }
 
     private static func handleTool(name: String, id: Any?, arguments: Any) {
+        if captureTools.contains(name), let captureFixture {
+            let isBrowserUse = captureFixture == "--browser-use-fixture"
+            let hasBrowserUseConfiguration = ["VAST_INSTANCE_ID", "VAST_API_KEY", "BROWSER_USE_CHROMIUM_PATH"]
+                .allSatisfy { ProcessInfo.processInfo.environment[$0]?.isEmpty == false }
+            let available = !isBrowserUse || hasBrowserUseConfiguration
+            let status = available ? "complete" : "blocked"
+            var structuredContent: [String: Any] = [
+                "status": status,
+                "capability": ["id": isBrowserUse ? "browser-use-capture" : "site-motion-capture", "available": available],
+            ]
+            if !available {
+                structuredContent["blockedReason"] = "Capture runner configuration is incomplete."
+            }
+            respond(id: id, result: [
+                "content": [["type": "text", "text": name]],
+                "structuredContent": structuredContent,
+                "arguments": arguments,
+            ])
+            return
+        }
         if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" && workflowTools.contains(name) {
             respond(id: id, result: ["content": [["type": "text", "text": name]], "arguments": arguments])
             return
@@ -76,6 +96,12 @@ enum WorkflowMCPFakeBackend {
         "check_capture_gpu", "capture_site_motion", "submit_motion_analysis",
         "extract_frames", "handoff_open_design", "resolve_asset_routes",
     ]
+
+    private static let captureTools: Set<String> = ["check_capture_gpu", "capture_site_motion"]
+
+    private static var captureFixture: String? {
+        CommandLine.arguments.first { $0 == "--browser-use-fixture" || $0 == "--site-motion-fixture" }
+    }
 
     private static func respond(id: Any?, result: [String: Any]) {
         write([

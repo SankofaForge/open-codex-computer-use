@@ -33,22 +33,103 @@ final class WorkflowContractTests: XCTestCase {
         ).validate())
     }
 
-    func testBrowserUseCaptureConfigurationAllowsBrowserPathName() throws {
-        XCTAssertNoThrow(try WorkflowBackendConfiguration(
+    func testBrowserUseCaptureBackendHasStableRawValue() {
+        XCTAssertEqual(WorkflowBackendKind.browserUseCapture.rawValue, "browser-use-capture")
+    }
+
+    func testBrowserUseCaptureRejectsManualCompatibilityOverride() {
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
             kind: .browserUseCapture,
             command: "browser-use-capture-mcp",
-            permittedEnvironmentVariables: ["BROWSER_USE_CHROMIUM_PATH"],
+            permittedEnvironmentVariables: browserUseEnvironmentVariables + ["BROWSER_USE_CAPTURE_COMPATIBLE"],
             declaredTools: ["check_capture_gpu", "capture_site_motion"]
         ).validate())
     }
 
-    func testBrowserUseCaptureConfigurationRejectsPathArgumentAssignment() {
+    func testBrowserUseCaptureRequiresExactlyItsRunnerEnvironmentNames() {
+        XCTAssertNoThrow(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: browserUseEnvironmentVariables,
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        ).validate())
+
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: Array(browserUseEnvironmentVariables.dropLast()),
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .browserUseCapture,
+            command: "browser-use-capture-mcp",
+            permittedEnvironmentVariables: browserUseEnvironmentVariables + ["UNRELATED_CAPTURE_VALUE"],
+            declaredTools: ["check_capture_gpu", "capture_site_motion"]
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+    }
+
+    func testBrowserUseTreatsChromiumPathAsEnvironmentNameOnly() {
+        XCTAssertTrue(browserUseEnvironmentVariables.contains("BROWSER_USE_CHROMIUM_PATH"))
         XCTAssertThrowsError(try WorkflowBackendConfiguration(
             kind: .browserUseCapture,
             command: "browser-use-capture-mcp",
             arguments: ["BROWSER_USE_CHROMIUM_PATH=/usr/bin/chromium"],
+            permittedEnvironmentVariables: browserUseEnvironmentVariables,
             declaredTools: ["check_capture_gpu", "capture_site_motion"]
-        ).validate())
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+    }
+
+    func testExplicitCaptureBackendMustBeSupportedAndConfigured() throws {
+        XCTAssertThrowsError(try WorkflowConfiguration(
+            workspaceRoot: ".",
+            backends: [],
+            captureBackend: .siteMotionCapture
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+
+        XCTAssertThrowsError(try WorkflowConfiguration(
+            workspaceRoot: ".",
+            backends: [],
+            captureBackend: .assetRouting
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
+    }
+
+    func testWorkflowConfigurationLoadsManualCaptureBackendSelection() throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("workflow-mcp-config-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: path) }
+
+        let configurationJSON = """
+        {
+          "workspaceRoot": ".",
+          "captureBackend": "site-motion-capture",
+          "backends": [
+            {
+              "kind": "site-motion-capture",
+              "command": "site-motion-capture-mcp",
+              "arguments": [],
+              "workingDirectory": ".",
+              "permittedEnvironmentVariables": [],
+              "declaredTools": ["check_capture_gpu", "capture_site_motion"],
+              "launchPolicy": "direct"
+            }
+          ]
+        }
+        """
+        try Data(configurationJSON.utf8).write(to: path)
+
+        let configuration = try WorkflowConfiguration.load(path: path.path)
+        XCTAssertEqual(configuration.captureBackend, .siteMotionCapture)
     }
 
     func testValidVisualImplementationFixturePasses() throws {
@@ -135,6 +216,12 @@ final class WorkflowContractTests: XCTestCase {
         }
     }
 }
+
+private let browserUseEnvironmentVariables = [
+    "VAST_INSTANCE_ID",
+    "VAST_API_KEY",
+    "BROWSER_USE_CHROMIUM_PATH",
+]
 
 private final class WorkflowFixture {
     let root: URL

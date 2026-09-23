@@ -22,8 +22,6 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
         .searchReferences: Route(kind: .designInspiration, tool: "design_search_references"),
         .prepareReferences: Route(kind: .designInspiration, tool: "design_prepare_references"),
         .extractTokens: Route(kind: .designInspiration, tool: "design_extract_tokens"),
-        .checkCaptureGPU: Route(kind: .browserUseCapture, tool: "check_capture_gpu"),
-        .captureSiteMotion: Route(kind: .browserUseCapture, tool: "capture_site_motion"),
         .submitMotionAnalysis: Route(kind: .motionAnalysis, tool: "submit_motion_analysis"),
         .extractFrames: Route(kind: .frameExtraction, tool: "extract_frames"),
         .handoffOpenDesign: Route(kind: .openDesign, tool: "handoff_open_design"),
@@ -60,7 +58,7 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
                 "manifestPath": manifestPath,
             ]
         }
-        guard let route = routes[stage] else { throw WorkflowStageDispatchError.missingBackend(.designInspiration, stage) }
+        guard let route = route(for: stage) else { throw WorkflowStageDispatchError.missingBackend(.designInspiration, stage) }
         guard let backend = configuration.backends.first(where: { $0.kind == route.kind }) else {
             throw WorkflowStageDispatchError.missingBackend(route.kind, stage)
         }
@@ -99,6 +97,17 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
     }
 
     deinit { shutdown() }
+
+    private func route(for stage: WorkflowStage) -> Route? {
+        switch stage {
+        case .checkCaptureGPU:
+            return Route(kind: configuration.captureBackend ?? .browserUseCapture, tool: "check_capture_gpu")
+        case .captureSiteMotion:
+            return Route(kind: configuration.captureBackend ?? .browserUseCapture, tool: "capture_site_motion")
+        default:
+            return routes[stage]
+        }
+    }
 
     private func transport(for backend: WorkflowBackendConfiguration, runId: String) throws -> ChildMCPTransport {
         let key = "\(runId)::\(backend.kind.rawValue)"
