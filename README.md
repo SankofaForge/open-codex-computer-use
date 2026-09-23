@@ -103,9 +103,10 @@ You can also manually download and install the
 
 ## More
 
-The workflow-host package boundary is documented in
-[`docs/workflow-mcp.md`](./docs/workflow-mcp.md). Its early scaffold does not
-yet launch backend MCPs or alter any existing client configuration.
+The optional workflow-host package and its child-MCP boundary are documented
+in [`docs/workflow-mcp.md`](./docs/workflow-mcp.md). Run
+`open-computer-use workflow-mcp --config <workflow-config>` to use it; it does
+not alter any existing client configuration.
 
 Besides the MCP JSON config above, you can also use the built-in commands:
 

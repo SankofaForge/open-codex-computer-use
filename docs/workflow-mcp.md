@@ -29,6 +29,7 @@ does not accept shell fragments or secret values in configuration.
 
 ```json
 {
+  "captureBackend": "browser-use-capture",
   "backends": [
     {
       "kind": "design-inspiration",
@@ -36,7 +37,17 @@ does not accept shell fragments or secret values in configuration.
       "arguments": [],
       "workingDirectory": ".",
       "permittedEnvironmentVariables": ["DESIGN_SEARCH_API_KEY"],
-      "declaredTools": ["design_search_references", "design_prepare_references", "design_extract_tokens"]
+      "declaredTools": ["design_search_references", "design_prepare_references", "design_extract_tokens"],
+      "launchPolicy": "direct"
+    },
+    {
+      "kind": "browser-use-capture",
+      "command": "browser-use-capture-mcp",
+      "arguments": [],
+      "workingDirectory": ".",
+      "permittedEnvironmentVariables": ["VAST_INSTANCE_ID", "VAST_API_KEY", "BROWSER_USE_CHROMIUM_PATH"],
+      "declaredTools": ["check_capture_gpu", "capture_site_motion"],
+      "launchPolicy": "direct"
     },
     {
       "kind": "site-motion-capture",
@@ -44,7 +55,8 @@ does not accept shell fragments or secret values in configuration.
       "arguments": [],
       "workingDirectory": ".",
       "permittedEnvironmentVariables": ["CAPTURE_SERVICE_API_KEY"],
-      "declaredTools": ["check_capture_gpu", "capture_site_motion"]
+      "declaredTools": ["check_capture_gpu", "capture_site_motion"],
+      "launchPolicy": "direct"
     },
     {
       "kind": "open-design",
@@ -52,17 +64,35 @@ does not accept shell fragments or secret values in configuration.
       "arguments": ["serve"],
       "workingDirectory": ".",
       "permittedEnvironmentVariables": [],
-      "declaredTools": ["handoff_open_design"]
+      "declaredTools": ["handoff_open_design"],
+      "launchPolicy": "direct"
     }
   ]
 }
 ```
 
-The example uses placeholders. A caller supplies any needed secret through its
-own environment, subject to the configured name allowlist. The host launches
-backend commands directly rather than through a shell and enforces declared
-backend tools. Open Design is deliberately a direct generated command, not a
-secret-loading wrapper.
+The host launches backend commands directly rather than through a shell and
+passes the configured environment names alongside its sanitized baseline.
+Never put environment values or secrets in this JSON. The Browser Use backend
+must permit exactly `VAST_INSTANCE_ID`, `VAST_API_KEY`, and
+`BROWSER_USE_CHROMIUM_PATH`. Supply the Vast API key through the host
+environment. The browser path must point to a real, executable, non-Snap
+Chromium or Chrome binary on the Vast runner.
+For the current runner, set `BROWSER_USE_CHROMIUM_PATH` to
+`/opt/google/chrome/chrome`. Do not use `/usr/bin/google-chrome`: it resolves
+through a launcher-script chain and is rejected. The adapter does not download
+a browser at runtime. Startup/CDP, recording, instrumentation, NVIDIA, and
+hardware-backed WebGL checks now pass on the rented runner. Capture remains
+blocked because the strict exact-host proxy rejects six Chrome background
+service destinations; none has been allowlisted. The adapter must keep
+`check_capture_gpu` blocked until the CPU egress gate also passes.
+
+`captureBackend` selects one capture backend for both capture stages. If it is
+omitted, Browser Use is selected. A blocked Browser Use result remains blocked;
+the host does not retry through `site-motion-capture`. To select the legacy
+backend manually during the acceptance window, set `captureBackend` to
+`site-motion-capture` and provide its backend declaration. Only the selected
+backend is launched.
 
 ## Planned evidence and data boundary
 
@@ -77,6 +107,8 @@ The host preserves the existing workflow evidence contract:
   `<workspaceRoot>/.workflow/checkpoints/<runId>.json`.
 - Capture artifacts remain under
   `artifacts/design-inspiration/site-motion-capture/`.
+  Browser Use is the default capture backend; the legacy site-motion-capture
+  backend remains a manually selected rollback during acceptance.
 - A manifest cannot report `complete` without the responsive and motion
   evidence matrix, Open Design handoff, and ready asset routes.
 - Model-provider selection remains harness-specific. The host only validates a
