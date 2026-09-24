@@ -1,0 +1,56 @@
+name: workflow-macos-validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/workflow-macos-validation.yml"
+      - "Package.swift"
+      - "apps/**"
+      - "packages/OpenComputerUseWorkflowKit/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-workflow:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Record native toolchain
+        run: |
+          mkdir -p artifacts/macos-workflow-validation
+          swift --version | tee artifacts/macos-workflow-validation/swift-version.txt
+          xcodebuild -version | tee artifacts/macos-workflow-validation/xcode-version.txt
+
+      - name: Build native workflow host
+        run: |
+          set -o pipefail
+          swift build --configuration debug --target OpenComputerUse 2>&1 \
+            | tee artifacts/macos-workflow-validation/build.log
+
+      - name: Run workflow contracts and child MCP integration tests
+        run: |
+          set -o pipefail
+          swift test --configuration debug \
+            --filter 'Workflow|ChildMCPTransportTests' 2>&1 \
+            | tee artifacts/macos-workflow-validation/tests.log
+
+      - name: Stage native workflow host
+        run: |
+          install -m 0755 .build/debug/OpenComputerUse \
+            artifacts/macos-workflow-validation/OpenComputerUse
+          shasum -a 256 artifacts/macos-workflow-validation/OpenComputerUse \
+            > artifacts/macos-workflow-validation/SHA256SUMS
+
+      - name: Upload native validation artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-workflow-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/macos-workflow-validation/
+          if-no-files-found: warn

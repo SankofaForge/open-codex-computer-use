@@ -12,6 +12,23 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         XCTAssertEqual(output["tool"] as? String, "design_search_references")
     }
 
+    func testOpenDesignPluginDiscoveryParsesJSONInMCPTextContent() throws {
+        let dispatcher = try ConfiguredChildMCPStageDispatcher(configuration: configuration())
+        let installedResponse: [String: Any] = [
+            "content": [[
+                "type": "text",
+                "text": "{\"plugins\":[{\"id\":\"od-web-effect-extractor\"}]}",
+            ]],
+        ]
+        let emptyCatalogResponse: [String: Any] = [
+            "content": [["type": "text", "text": "{\"plugins\":[]}"]],
+        ]
+
+        XCTAssertTrue(dispatcher.pluginAvailable("od-web-effect-extractor", in: installedResponse))
+        XCTAssertFalse(dispatcher.pluginAvailable("od-web-effect-extractor", in: emptyCatalogResponse))
+        XCTAssertFalse(dispatcher.pluginAvailable("od-web-effect-extractor", in: ["content": [["type": "text", "text": "plugin described as od-web-effect-extractor"]]]))
+    }
+
     func testRejectsMissingBackendBeforeLaunchingAProcess() throws {
         let dispatcher = try ConfiguredChildMCPStageDispatcher(configuration: WorkflowConfiguration(workspaceRoot: ".", backends: [
             WorkflowBackendConfiguration(kind: .designInspiration, command: "/definitely/missing", declaredTools: ["design_search_references"]),
@@ -28,6 +45,9 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
             environment: [:]
         )
         defer { dispatcher.shutdown() }
+
+        let preflight = try dispatcher.dispatch(stage: .preflight, arguments: ["requiresCapture": true])
+        XCTAssertEqual(preflight["status"] as? String, "complete")
 
         let gpuOutput = try dispatcher.dispatch(stage: .checkCaptureGPU, arguments: [:])
         XCTAssertEqual(gpuOutput["backend"] as? String, "browser-use-capture")
@@ -174,4 +194,5 @@ private let browserUseEnvironmentVariables = [
     "VAST_INSTANCE_ID",
     "VAST_API_KEY",
     "BROWSER_USE_CHROMIUM_PATH",
+    "CAPTURE_EGRESS_ATTESTATION_FILE",
 ]

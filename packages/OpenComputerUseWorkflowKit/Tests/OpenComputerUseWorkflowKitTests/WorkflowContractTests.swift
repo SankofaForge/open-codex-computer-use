@@ -134,12 +134,149 @@ final class WorkflowContractTests: XCTestCase {
 
     func testValidVisualImplementationFixturePasses() throws {
         let fixture = try WorkflowFixture.make()
-        let report = try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root)
+        let report = try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root, expectedAssetIDs: ["hero-model"])
 
         XCTAssertEqual(report.manifestStatus, .complete)
         XCTAssertEqual(report.captureCellCount, 4)
         XCTAssertEqual(report.analysisCount, 4)
         XCTAssertEqual(report.readyAssetRouteCount, 1)
+    }
+
+    func testVisualAssetRouteIDsMustMatchPreparedPlan() throws {
+        let fixture = try WorkflowFixture.make()
+        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root, expectedAssetIDs: ["different-id"])) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidEvidence)
+        }
+    }
+
+    func testCaptureAnalysisMustMatchSourcePathHashAndCaptureRun() throws {
+        let fixture = try WorkflowFixture.make()
+        var manifest = fixture.manifest
+        var analysis = manifest["analysis"] as! [String: Any]
+        var entries = analysis["entries"] as! [[String: Any]]
+        var first = entries[0]
+        var source = first["source"] as! [String: Any]
+        source["captureRunId"] = "another-run"
+        first["source"] = source
+        entries[0] = first
+        analysis["entries"] = entries
+        manifest["analysis"] = analysis
+        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(manifest, workspaceRoot: fixture.root)) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidEvidence)
+        }
+    }
+
+    func testCaptureCellRequiresAttestedEgressConsentAndVideoStream() throws {
+        for field in ["directEgressBlocked", "approvedProxyProbe"] {
+            let fixture = try WorkflowFixture.make()
+            var manifest = fixture.manifest
+            var capture = manifest["capture"] as! [String: Any]
+            var cells = capture["matrix"] as! [[String: Any]]
+            let captureManifestArtifact = (cells[0]["artifacts"] as! [[String: Any]]).first { ($0["path"] as? String)?.hasSuffix(".capture-cell.v2.json") == true }!
+            let path = fixture.root.appendingPathComponent(captureManifestArtifact["path"] as! String)
+            var cellManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+            var evidence = cellManifest["evidence"] as! [String: Any]
+            var egress = evidence["egress"] as! [String: Any]
+            egress[field] = false
+            evidence["egress"] = egress
+            cellManifest["evidence"] = evidence
+            try JSONSerialization.data(withJSONObject: cellManifest).write(to: path)
+            let updated = try Data(contentsOf: path)
+            cells[0]["artifacts"] = (cells[0]["artifacts"] as! [[String: Any]]).map { artifact in
+                guard artifact["path"] as? String == captureManifestArtifact["path"] as? String else { return artifact }
+                return ["path": artifact["path"]!, "size": updated.count, "sha256": WorkflowSHA256.hexDigest(updated), "nonEmpty": true]
+            }
+            capture["matrix"] = cells
+            manifest["capture"] = capture
+            XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(manifest, workspaceRoot: fixture.root))
+        }
+
+        let noStream = try WorkflowFixture.make()
+        var capture = noStream.manifest["capture"] as! [String: Any]
+        var cells = capture["matrix"] as! [[String: Any]]
+        let artifact = (cells[0]["artifacts"] as! [[String: Any]]).first { ($0["path"] as? String)?.hasSuffix(".capture-cell.v2.json") == true }!
+        let file = noStream.root.appendingPathComponent(artifact["path"] as! String)
+        var cellManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        var validation = cellManifest["validation"] as! [String: Any]
+        var media = validation["media"] as! [String: Any]
+        media["videoStreamCount"] = 0
+        validation["media"] = media
+        cellManifest["validation"] = validation
+        let changed = try JSONSerialization.data(withJSONObject: cellManifest)
+        try changed.write(to: file)
+        cells[0]["artifacts"] = (cells[0]["artifacts"] as! [[String: Any]]).map { value in
+            guard value["path"] as? String == artifact["path"] as? String else { return value }
+            return ["path": value["path"]!, "size": changed.count, "sha256": WorkflowSHA256.hexDigest(changed), "nonEmpty": true]
+        }
+        capture["matrix"] = cells
+        noStream.manifest["capture"] = capture
+        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(noStream.manifest, workspaceRoot: noStream.root))
+    }
+
+    func testBrowserProxyProofMustMatchTheCapturedPort() throws {
+        let fixture = try WorkflowFixture.make()
+        var manifest = fixture.manifest
+        var capture = manifest["capture"] as! [String: Any]
+        var cells = capture["matrix"] as! [[String: Any]]
+        let firstCell = cells[0]
+        let captureArtifact = (firstCell["artifacts"] as! [[String: Any]]).first { ($0["path"] as? String)?.hasSuffix(".capture-cell.v2.json") == true }!
+        let path = fixture.root.appendingPathComponent(captureArtifact["path"] as! String)
+        var captureManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var evidence = captureManifest["evidence"] as! [String: Any]
+        var attestation = evidence["egressAttestation"] as! [String: Any]
+        var proxyEvidence = attestation["proxyEvidence"] as! [String: Any]
+        proxyEvidence["connectionOutcomes"] = [["hostname": "preview.example", "port": 8443, "outcome": "connected", "count": 1]]
+        attestation["proxyEvidence"] = proxyEvidence
+        evidence["egressAttestation"] = attestation
+        captureManifest["evidence"] = evidence
+        let updated = try JSONSerialization.data(withJSONObject: captureManifest, options: [.sortedKeys])
+        try updated.write(to: path)
+        let replacement: [String: Any] = ["path": captureArtifact["path"]!, "size": updated.count, "sha256": WorkflowSHA256.hexDigest(updated), "nonEmpty": true]
+        cells[0]["artifacts"] = (firstCell["artifacts"] as! [[String: Any]]).map { item in
+            (item["path"] as? String) == (captureArtifact["path"] as? String) ? replacement : item
+        }
+        capture["matrix"] = cells
+        manifest["capture"] = capture
+        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(manifest, workspaceRoot: fixture.root)) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidEvidence)
+        }
+    }
+
+    func testStageArgumentsDoNotLeakHostState() {
+        let context = WorkflowStageContext(
+            runId: UUID().uuidString,
+            workspaceRoot: "/workspace",
+            taskProfile: "visual-implementation",
+            inputs: ["liveUrl": "https://example.com", "cellId": "mobile-full", "ignored": "secret"],
+            previousResults: [.checkCaptureGPU: ["gpuCheckId": "fresh-check"]]
+        )
+        let arguments = context.arguments(for: .captureSiteMotion)
+        XCTAssertEqual(arguments["liveUrl"] as? String, "https://example.com")
+        XCTAssertEqual(arguments["gpuCheckId"] as? String, "fresh-check")
+        XCTAssertNil(arguments["runId"])
+        XCTAssertNil(arguments["workspaceRoot"])
+        XCTAssertNil(arguments["taskProfile"])
+        XCTAssertNil(arguments["ignored"])
+    }
+
+    func testVisualProfileSkipsAssetRoutingOnlyForAnExplicitEmptyPlan() {
+        let emptyPlanStages = WorkflowTaskProfile.visualImplementation.stages(preparedAssetIDs: [])
+        XCTAssertFalse(emptyPlanStages.contains(.resolveAssetRoutes))
+        XCTAssertTrue(emptyPlanStages.contains(.validate))
+
+        let plannedAssetStages = WorkflowTaskProfile.visualImplementation.stages(preparedAssetIDs: ["hero-model"])
+        XCTAssertTrue(plannedAssetStages.contains(.resolveAssetRoutes))
+
+        let unknownPlanStages = WorkflowTaskProfile.visualImplementation.stages(preparedAssetIDs: nil)
+        XCTAssertTrue(unknownPlanStages.contains(.resolveAssetRoutes))
+    }
+
+    func testVisualManifestAllowsCompleteRunWithEmptyAssetPlan() throws {
+        let fixture = try WorkflowFixture.make()
+        fixture.manifest["assetRoutes"] = []
+        let report = try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root, expectedAssetIDs: [])
+        XCTAssertEqual(report.manifestStatus, .complete)
+        XCTAssertEqual(report.readyAssetRouteCount, 0)
     }
 
     func testPartialAndBlockedFixturesAreAcceptedWithRequiredReasons() throws {
@@ -221,6 +358,7 @@ private let browserUseEnvironmentVariables = [
     "VAST_INSTANCE_ID",
     "VAST_API_KEY",
     "BROWSER_USE_CHROMIUM_PATH",
+    "CAPTURE_EGRESS_ATTESTATION_FILE",
 ]
 
 private final class WorkflowFixture {
@@ -244,8 +382,36 @@ private final class WorkflowFixture {
         let frame = try artifact(root: root, path: "artifacts/design-inspiration/site-motion-capture/frame.png", contents: "frame")
         for (index, pair) in [("desktop", "full"), ("desktop", "reduced"), ("mobile", "full"), ("mobile", "reduced")].enumerated() {
             let capture = try artifact(root: root, path: "artifacts/design-inspiration/site-motion-capture/capture-\(index).webm", contents: "capture \(index)")
+            let jank = try artifact(root: root, path: "artifacts/design-inspiration/site-motion-capture/capture-\(index).jank.json", contents: "{\"status\":\"valid\"}")
             let cellID = "cell-\(index)"
             let finalURL = "https://preview.example/\(cellID)"
+            let viewport: [String: Any] = ["width": pair.0 == "desktop" ? 1920 : 390, "height": pair.0 == "desktop" ? 1080 : 844, "mobile": pair.0 == "mobile", "reducedMotion": pair.1 == "reduced"]
+            let captureManifestObject: [String: Any] = [
+                "contractVersion": "capture-cell.v2",
+                "runId": "capture-\(index)",
+                "cellId": cellID,
+                "finalUrl": finalURL,
+                "viewport": viewport,
+                "files": [
+                    ["path": URL(fileURLWithPath: capture["path"] as! String).lastPathComponent, "size": capture["size"]!, "sha256": capture["sha256"]!],
+                    ["path": URL(fileURLWithPath: jank["path"] as! String).lastPathComponent, "size": jank["size"]!, "sha256": jank["sha256"]!],
+                ],
+                "validation": ["media": ["status": "valid", "format": "webm", "durationSeconds": 8.0, "videoStreamCount": 1], "jank": ["status": "valid"]],
+                "cleanup": "confirmed",
+                "status": "complete",
+                "evidence": [
+                    "gpu": ["status": "verified"],
+                    "egress": ["status": "verified", "boundaryId": "boundary-\(index)", "approvedHost": "preview.example", "networkNamespaceInode": 12345, "directEgressBlocked": true, "approvedProxyProbe": true, "proxyPolicy": "capture-exact-host.v1"],
+                    "egressAttestation": ["schemaVersion": "runner-egress-boundary.v1", "boundaryId": "boundary-\(index)", "approvedHost": "preview.example", "networkNamespaceInode": 12345, "directEgressBlocked": true, "proxyPolicy": "capture-exact-host.v1", "controls": ["direct": ["status": "blocked"], "proxied": ["status": "passed"]], "runnerInstanceId": "runner-1", "browserExecutable": "/opt/chrome", "browserVersion": "Chrome 1", "captureRuntime": "browser-use", "captureRuntimeVersion": "1", "browserUseVersion": "0.13.10", "checkedAt": "2026-09-23T12:00:00Z", "expiresAt": "2026-09-23T12:01:00Z", "runId": "capture-\(index)", "proxyEvidence": ["violations": [], "connectionOutcomes": [["hostname": "preview.example", "port": 443, "outcome": "connected", "count": 1]]], "cleanupVerified": true],
+                    "consent": ["verified": true, "blindSpots": []],
+                    "scroll": ["completed": true, "truncated": false],
+                    "interactionFailures": [],
+                ],
+            ]
+            let captureManifestData = try JSONSerialization.data(withJSONObject: captureManifestObject, options: [.sortedKeys])
+            let captureManifestPath = root.appendingPathComponent("artifacts/design-inspiration/site-motion-capture/capture-\(index).capture-cell.v2.json")
+            try captureManifestData.write(to: captureManifestPath)
+            let captureManifest: [String: Any] = ["path": "artifacts/design-inspiration/site-motion-capture/capture-\(index).capture-cell.v2.json", "size": captureManifestData.count, "sha256": WorkflowSHA256.hexDigest(captureManifestData), "nonEmpty": true]
             cells.append([
                 "cellId": cellID,
                 "viewport": pair.0,
@@ -255,7 +421,7 @@ private final class WorkflowFixture {
                 "height": pair.0 == "desktop" ? 1080 : 844,
                 "runId": "capture-\(index)",
                 "finalUrl": finalURL,
-                "artifacts": [capture],
+                "artifacts": [capture, jank, captureManifest],
             ])
             analyses.append([
                 "schemaVersion": "motion-analysis.v2",

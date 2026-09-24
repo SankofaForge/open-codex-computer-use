@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 public struct WorkflowEvidenceValidationReport: Equatable, Sendable {
     public let manifestStatus: WorkflowRunStatus
@@ -15,15 +16,15 @@ public struct WorkflowEvidenceValidationReport: Equatable, Sendable {
 }
 
 public enum WorkflowEvidenceValidator {
-    public static func validateManifest(data: Data, workspaceRoot: URL) throws -> WorkflowEvidenceValidationReport {
+    public static func validateManifest(data: Data, workspaceRoot: URL, expectedAssetIDs: Set<String>? = nil) throws -> WorkflowEvidenceValidationReport {
         let raw = try JSONSerialization.jsonObject(with: data)
         guard let manifest = raw as? [String: Any] else {
             throw WorkflowContractError(.invalidEvidence, "workflow manifest must be a JSON object")
         }
-        return try validateManifest(manifest, workspaceRoot: workspaceRoot)
+        return try validateManifest(manifest, workspaceRoot: workspaceRoot, expectedAssetIDs: expectedAssetIDs)
     }
 
-    public static func validateManifest(_ manifest: [String: Any], workspaceRoot: URL) throws -> WorkflowEvidenceValidationReport {
+    public static func validateManifest(_ manifest: [String: Any], workspaceRoot: URL, expectedAssetIDs: Set<String>? = nil) throws -> WorkflowEvidenceValidationReport {
         try exactKeys(manifest, allowed: [
             "schemaVersion", "taskProfile", "profileReason", "workspace", "reference", "capture", "artifacts",
             "analysis", "frames", "openDesign", "assetRoutes", "status", "blockedReason",
@@ -63,17 +64,33 @@ public enum WorkflowEvidenceValidator {
             try safeHTTPURL(cell.requiredString("finalUrl"), label: "capture finalUrl")
             let artifacts = try cell.requiredArray("artifacts")
             if status == "complete" {
-                try require(!artifacts.isEmpty, .invalidEvidence, "complete capture cells require artifacts")
+                try require(artifacts.count >= 3, .invalidEvidence, "complete capture cells require WebM, jank, and capture-cell artifacts")
             }
             if status == "blocked" {
                 _ = try cell.requiredString("blockedReason")
             }
+            var validatedCellArtifacts: [[String: Any]] = []
             for rawArtifact in artifacts {
                 let artifact = try object(rawArtifact, label: "capture artifact")
                 let hash = try validateArtifact(artifact, workspaceRoot: root)
                 let artifactPath = try artifact.requiredString("path")
+                validatedCellArtifacts.append(artifact)
                 let key = "\(artifactPath):\(hash)"
                 try require(captureArtifacts.insert(key).inserted, .invalidEvidence, "capture artifacts must not be reused across cells")
+            }
+            if status == "complete" {
+                try validateCaptureCellEvidence(
+                    artifacts: validatedCellArtifacts,
+                    cell: cell,
+                    workspaceRoot: root,
+                    cellID: cellID,
+                    runID: try cell.requiredString("runId"),
+                    finalURL: try cell.requiredString("finalUrl"),
+                    viewport: viewport,
+                    motionMode: mode,
+                    width: try positiveInteger(cell["width"], label: "capture width"),
+                    height: try positiveInteger(cell["height"], label: "capture height")
+                )
             }
             cellsByID[cellID] = cell
         }
@@ -86,11 +103,14 @@ public enum WorkflowEvidenceValidator {
         }
 
         var frameHashes = Set<String>()
+        var framePairs = Set<String>()
         for rawFrame in try manifest.requiredArray("frames") {
             let frame = try object(rawFrame, label: "frame")
             try exactKeys(frame, allowed: ["path", "size", "sha256", "nonEmpty", "kind", "timestampSeconds"], label: "frame")
             _ = try finiteNumber(frame["timestampSeconds"], label: "frame timestampSeconds", minimum: 0)
-            frameHashes.insert(try validateArtifact(frame, workspaceRoot: root, allowTimestampSeconds: true))
+            let hash = try validateArtifact(frame, workspaceRoot: root, allowTimestampSeconds: true)
+            frameHashes.insert(hash)
+            framePairs.insert("\(try frame.requiredString("path")):\(hash)")
         }
 
         let analysisContainer = try manifest.requiredObject("analysis")
@@ -114,8 +134,18 @@ public enum WorkflowEvidenceValidator {
             let sourceHash = try source.requiredString("sha256")
             let cellHashes = try (cell.requiredArray("artifacts")).map { try object($0, label: "capture artifact").requiredString("sha256") }
             try require(cellHashes.contains(sourceHash), .invalidEvidence, "analysis source hash is not declared by its cell")
+            let sourcePath = try source.requiredString("artifactPath")
+            let cellPaths = try (cell.requiredArray("artifacts")).map { try object($0, label: "capture artifact").requiredString("path") }
+            try require(cellPaths.contains(sourcePath), .invalidEvidence, "analysis source path is not declared by its cell")
+            try require(source["captureRunId"] as? String == cell["runId"] as? String, .invalidEvidence, "analysis captureRunId does not match cell runId")
             for hash in result.momentFrameHashes {
                 try require(frameHashes.contains(hash), .invalidEvidence, "moment frame hash is not declared")
+            }
+            for rawMoment in try analysis.requiredArray("moments") {
+                let moment = try object(rawMoment, label: "motion moment")
+                let framePath = try moment.requiredString("framePath")
+                let frameHash = try moment.requiredString("frameSha256")
+                try require(framePairs.contains("\(framePath):\(frameHash)"), .invalidEvidence, "moment frame path and hash are not declared together")
             }
             hasRequiredGap = hasRequiredGap || result.hasRequiredGap
         }
@@ -176,6 +206,13 @@ public enum WorkflowEvidenceValidator {
                 blockedRoute = true
                 _ = try route.requiredString("blockedReason")
             }
+        }
+
+        if profile == "visual-implementation", let expectedAssetIDs {
+            let actualAssetIDs = Set(try manifest.requiredArray("assetRoutes").map {
+                try object($0, label: "asset route").requiredString("assetId")
+            })
+            try require(actualAssetIDs == expectedAssetIDs, .invalidEvidence, "asset route IDs do not match the prepared asset plan")
         }
 
         let finalStatus = try WorkflowRunStatus(rawValue: manifest.requiredEnum("status", values: ["complete", "partial", "blocked"])) ?? .partial
@@ -239,6 +276,140 @@ public enum WorkflowEvidenceValidator {
         }
         return MotionAnalysisValidationResult(momentFrameHashes: frameHashes, hasRequiredGap: hasRequiredGap)
     }
+}
+
+private func validateCaptureCellEvidence(
+    artifacts: [[String: Any]],
+    cell: [String: Any],
+    workspaceRoot: URL,
+    cellID: String,
+    runID: String,
+    finalURL: String,
+    viewport: String,
+    motionMode: String,
+    width: Int,
+    height: Int
+) throws {
+    func artifact(suffix: String) throws -> [String: Any] {
+        guard let match = artifacts.first(where: { (($0["path"] as? String) ?? "").hasSuffix(suffix) }) else {
+            throw WorkflowContractError(.invalidEvidence, "complete capture cell requires a \(suffix) artifact")
+        }
+        return match
+    }
+    let video = try artifact(suffix: ".webm")
+    let jank = try artifact(suffix: ".jank.json")
+    let captureManifest = try artifact(suffix: ".capture-cell.v2.json")
+    let manifestPath = try captureManifest.requiredString("path")
+    let manifestURL = workspaceRoot.appendingPathComponent(manifestPath).resolvingSymlinksInPath().standardizedFileURL
+    let captureData = try Data(contentsOf: manifestURL)
+    guard let capture = try JSONSerialization.jsonObject(with: captureData) as? [String: Any] else {
+        throw WorkflowContractError(.invalidEvidence, "capture-cell.v2 artifact must be a JSON object")
+    }
+    try require(capture["contractVersion"] as? String == "capture-cell.v2", .unsupportedSchema, "unsupported capture-cell contractVersion")
+    try require(capture["runId"] as? String == runID, .invalidEvidence, "capture-cell runId does not match workflow cell")
+    try require(capture["cellId"] as? String == cellID, .invalidEvidence, "capture-cell cellId does not match workflow cell")
+    try require(capture["finalUrl"] as? String == finalURL, .invalidEvidence, "capture-cell finalUrl does not match workflow cell")
+    try require(capture["status"] as? String == "complete", .invalidEvidence, "capture-cell manifest is not complete")
+    let viewportEvidence = try capture.requiredObject("viewport")
+    let evidenceWidth = try positiveInteger(viewportEvidence["width"], label: "capture-cell viewport width")
+    let evidenceHeight = try positiveInteger(viewportEvidence["height"], label: "capture-cell viewport height")
+    try require(evidenceWidth == width, .invalidEvidence, "capture-cell viewport width does not match workflow cell")
+    try require(evidenceHeight == height, .invalidEvidence, "capture-cell viewport height does not match workflow cell")
+    try require(viewportEvidence["mobile"] as? Bool == (viewport == "mobile"), .invalidEvidence, "capture-cell mobile setting does not match workflow cell")
+    try require(viewportEvidence["reducedMotion"] as? Bool == (motionMode == "reduced"), .invalidEvidence, "capture-cell reduced-motion setting does not match workflow cell")
+
+    let validation = try capture.requiredObject("validation")
+    let media = try validation.requiredObject("media")
+    try require(media["status"] as? String == "valid", .invalidEvidence, "capture-cell media validation is not valid")
+    try require((media["format"] as? String ?? "").lowercased().contains("webm"), .invalidEvidence, "capture-cell media format is not WebM")
+    _ = try finiteNumber(media["durationSeconds"], label: "capture-cell media durationSeconds", minimumExclusive: 0)
+    let videoStreamCount = try positiveInteger(media["videoStreamCount"], label: "capture-cell videoStreamCount")
+    try require(videoStreamCount >= 1, .invalidEvidence, "capture-cell has no video stream")
+    let jankValidation = try validation.requiredObject("jank")
+    try require(jankValidation["status"] as? String == "valid", .invalidEvidence, "capture-cell jank validation is not valid")
+    try require(capture["cleanup"] as? String == "confirmed", .invalidEvidence, "capture-cell cleanup is not confirmed")
+
+    let evidence = try capture.requiredObject("evidence")
+    let gpu = try evidence.requiredObject("gpu")
+    try require(gpu["status"] as? String == "verified", .invalidEvidence, "capture-cell GPU evidence is not verified")
+    let egress = try evidence.requiredObject("egress")
+    try require(egress["status"] as? String == "verified", .invalidEvidence, "capture-cell egress evidence is not verified")
+    _ = try egress.requiredString("boundaryId")
+    let approvedHost = try egress.requiredString("approvedHost").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    let finalHost = URLComponents(string: finalURL)?.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    try require(approvedHost == finalHost, .invalidEvidence, "capture-cell approvedHost does not match finalUrl")
+    let namespaceInode = try positiveInteger(egress["networkNamespaceInode"], label: "capture-cell networkNamespaceInode")
+    try require(namespaceInode > 0, .invalidEvidence, "capture-cell network namespace is not attested")
+    try require(egress["directEgressBlocked"] as? Bool == true, .invalidEvidence, "capture-cell direct egress was not blocked")
+    try require(egress["approvedProxyProbe"] as? Bool == true, .invalidEvidence, "capture-cell approved proxy probe did not pass")
+    try require(egress["proxyPolicy"] as? String == "capture-exact-host.v1", .invalidEvidence, "capture-cell proxy policy is unsupported")
+    let attestation = try evidence.requiredObject("egressAttestation")
+    try exactKeys(attestation, allowed: ["schemaVersion", "boundaryId", "approvedHost", "networkNamespaceInode", "directEgressBlocked", "proxyPolicy", "controls", "runnerInstanceId", "browserExecutable", "browserVersion", "captureRuntime", "captureRuntimeVersion", "browserUseVersion", "checkedAt", "expiresAt", "runId", "proxyEvidence", "cleanupVerified"], label: "runner egress attestation")
+    try require(attestation["schemaVersion"] as? String == "runner-egress-boundary.v1", .unsupportedSchema, "unsupported runner egress attestation schemaVersion")
+    try require(attestation["boundaryId"] as? String == egress["boundaryId"] as? String, .invalidEvidence, "egress attestation boundaryId does not match summary")
+    try require((attestation["approvedHost"] as? String)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == approvedHost, .invalidEvidence, "egress attestation approvedHost does not match summary")
+    try require((attestation["networkNamespaceInode"] as? NSNumber)?.intValue == namespaceInode, .invalidEvidence, "egress attestation namespace inode does not match summary")
+    try require(attestation["directEgressBlocked"] as? Bool == true && attestation["proxyPolicy"] as? String == "capture-exact-host.v1", .invalidEvidence, "egress attestation does not prove the required policy")
+    if attestation["captureRuntime"] as? String == "browser-use" {
+        try require(attestation["runId"] as? String == runID, .invalidEvidence, "egress attestation run ID does not match capture")
+        try require(attestation["cleanupVerified"] as? Bool == true, .invalidEvidence, "egress boundary cleanup is not verified")
+        let proxyEvidence = try attestation.requiredObject("proxyEvidence")
+        try require((proxyEvidence["violations"] as? [Any])?.isEmpty == true, .invalidEvidence, "egress proxy reports policy violations")
+        let connections = proxyEvidence["connectionOutcomes"] as? [[String: Any]] ?? []
+        let finalComponents = URLComponents(string: finalURL)
+        let expectedPort = finalComponents?.port ?? (finalComponents?.scheme?.lowercased() == "https" ? 443 : 80)
+        try require(connections.contains { connection in
+            let port = connection["port"] as? NSNumber
+            let count = connection["count"] as? NSNumber
+            return (connection["hostname"] as? String)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == approvedHost
+                && port.map { CFGetTypeID($0) != CFBooleanGetTypeID() && $0.intValue == expectedPort } == true
+                && connection["outcome"] as? String == "connected"
+                && count.map { CFGetTypeID($0) != CFBooleanGetTypeID() && $0.intValue > 0 } == true
+        }, .invalidEvidence, "egress proxy has no successful connection to the approved host and port")
+    }
+    let controls = try attestation.requiredObject("controls")
+    try exactKeys(controls, allowed: ["direct", "proxied"], label: "egress control probes")
+    try require((controls["direct"] as? [String: Any])?["status"] as? String == "blocked", .invalidEvidence, "direct egress control probe did not block")
+    try require((controls["proxied"] as? [String: Any])?["status"] as? String == "passed", .invalidEvidence, "approved proxy control probe did not pass")
+    for key in ["runnerInstanceId", "browserExecutable", "browserVersion", "captureRuntimeVersion", "browserUseVersion"] {
+        _ = try attestation.requiredString(key)
+    }
+    try require(["browser-use", "site-motion-capture"].contains(attestation["captureRuntime"] as? String ?? ""), .invalidEvidence, "egress attestation captureRuntime is unsupported")
+    let checkedAt = try attestationDate(attestation, key: "checkedAt")
+    let expiresAt = try attestationDate(attestation, key: "expiresAt")
+    let lifetime = expiresAt.timeIntervalSince(checkedAt)
+    try require(lifetime > 0 && lifetime <= 120, .invalidEvidence, "egress attestation lifetime must be at most 120 seconds")
+    let consent = try evidence.requiredObject("consent")
+    try require(consent["verified"] as? Bool == true, .invalidEvidence, "capture-cell consent is not verified")
+    try require((consent["blindSpots"] as? [Any] ?? []).isEmpty, .invalidEvidence, "capture-cell consent has blind spots")
+    let scroll = try evidence.requiredObject("scroll")
+    try require(scroll["completed"] as? Bool == true, .invalidEvidence, "capture-cell scroll did not complete")
+    try require(scroll["truncated"] as? Bool == false, .invalidEvidence, "capture-cell scroll is truncated")
+    try require((evidence["interactionFailures"] as? [Any] ?? []).isEmpty, .invalidEvidence, "capture-cell contains interaction failures")
+
+    let files = try capture.requiredArray("files")
+    for expected in [video, jank] {
+        let expectedPath = try expected.requiredString("path")
+        let basename = URL(fileURLWithPath: expectedPath).lastPathComponent
+        let expectedSize = try positiveInteger(expected["size"], label: "capture artifact size")
+        let expectedHash = try expected.requiredString("sha256")
+        let matching = try files.compactMap { try object($0, label: "capture-cell file") }.first {
+            $0["path"] as? String == basename
+        }
+        try require((matching?["size"] as? Int) == expectedSize, .invalidEvidence, "capture-cell file size does not match workflow artifact")
+        try require(matching?["sha256"] as? String == expectedHash, .invalidEvidence, "capture-cell file hash does not match workflow artifact")
+    }
+}
+
+private func attestationDate(_ object: [String: Any], key: String) throws -> Date {
+    let value = try object.requiredString(key)
+    let optionSets: [ISO8601DateFormatter.Options] = [.withInternetDateTime.union(.withFractionalSeconds), .withInternetDateTime]
+    for options in optionSets {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = options
+        if let date = formatter.date(from: value) { return date }
+    }
+    throw WorkflowContractError(.invalidEvidence, "egress attestation \(key) must be ISO-8601 with a timezone")
 }
 
 public struct MotionAnalysisValidationResult: Equatable, Sendable {
@@ -348,7 +519,7 @@ private func sha256(_ value: String, label: String) throws {
 }
 
 private func positiveInteger(_ value: Any?, label: String) throws -> Int {
-    guard !(value is Bool), let number = value as? NSNumber,
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
           number.doubleValue.rounded() == number.doubleValue, number.intValue > 0 else {
         throw WorkflowContractError(.invalidEvidence, "\(label) must be a positive integer")
     }
@@ -356,7 +527,7 @@ private func positiveInteger(_ value: Any?, label: String) throws -> Int {
 }
 
 private func finiteNumber(_ value: Any?, label: String, minimum: Double? = nil, minimumExclusive: Double? = nil, maximum: Double? = nil) throws -> Double {
-    guard !(value is Bool), let number = value as? NSNumber else {
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
         throw WorkflowContractError(.invalidEvidence, "\(label) must be a number")
     }
     let result = number.doubleValue
