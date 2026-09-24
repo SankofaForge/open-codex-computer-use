@@ -65,7 +65,7 @@ MCP backends without changing the existing nine-tool `mcp` surface.
 - `make workflow-smoke` after milestone 3 replaces the current explicit
   placeholder with fake-backend end-to-end coverage.
 
-The eventual workflow suite also covers malformed JSON, unknown tools, crash
+The workflow suite covers malformed JSON, unknown tools, crash
 and timeout cleanup, cancellation, resume after backend failure, app approval
 and denial, global-pointer rejection, artifact containment and SHA-256,
 four-cell matrix completeness, Open Design redaction, and no-secret logging.
@@ -80,7 +80,10 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
   entry point.
 - [x] Implement contract and validator layers.
 - [x] Implement child transport and asynchronous workflow server lifecycle.
-- [ ] Implement approvals and external adapters.
+- [x] Implement typed approvals/resume, profile-aware stages, atomic metadata
+  checkpoints, cancellation, child-schema argument projection, and the
+  published Open Design MCP adapter. The local app handshake exposes the
+  adapter tools, but `list_plugins` is empty and blocks visual handoff.
 - [x] Add the Browser Use capture backend contract and fail-closed adapter
   boundary; runtime capture remains blocked until compatibility validation.
 - [x] Replace the manual Browser Use compatibility override with explicit
@@ -92,8 +95,20 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
   proxy denial, not a CPU-function failure. Preserve fail-closed capture
   authorization while the browser-wide egress boundary remains unverified.
 - [x] Replace the placeholder smoke target with deterministic lifecycle coverage.
+- [x] Require capture-cell v2, WebM video stream, jank, viewport and motion
+  match, consent result, cleanup, GPU proof, and runner-bound egress proof for
+  each complete capture. Align Swift and Python checks for run IDs, hashes,
+  paths, and proxy/cleanup proof.
+- [x] Repair Browser Use evidence handling and the manual rollback route's
+  untouched consent mode, mobile touch emulation, navigation-persistent jank,
+  strict media validation, numeric namespace binding, and cleanup evidence.
 - [x] Split the SwiftPM graph by platform so Linux can test the Foundation-only
   workflow kit while macOS retains the complete OCU package gate.
+- [x] Prepare a read-only macOS CI workflow that builds the native host, runs
+  workflow contract and child-MCP transport tests, and uploads the binary and
+  logs. The workflow is local to this task branch and has not run.
+- [ ] Run the macOS CI workflow and inspect its artifact after a pull request
+  run is authorized.
 - [x] Implement the local stdio adapter's Vast-managed SSH bridge, remote
   worker invocation, artifact transfer, and cleanup lifecycle. The remote
   worker launches real Chrome explicitly and attaches through CDP.
@@ -161,6 +176,16 @@ must not issue a `gpu_check_id` until CPU, GPU, and egress gates pass.
 
 ### Acceptance gates
 
+The public fixtures are frozen as of 2026-09-24: [Three.js skinning and
+morphing](https://threejs.org/examples/webgl_animation_skinning_morph) for
+animated WebGL, and the [ConsentCenter cookie-banner
+playground](https://www.consentcenter.io/playground/cookie-banner) for the
+reject flow. Before testing, confirm the WebGL canvas and animation controls,
+then verify that the consent record reports rejection and that the page has
+not set cookies. The consent page says it does not set cookies or send data.
+Do not accept cookies. No captures have been made; fixture drift blocks the
+gate until the target is reviewed again.
+
 The runner provisioning checks currently show Chrome and an NVIDIA device to
 `nvidia-smi`. Exploratory startup and page-evaluation checks are not the full
 compatibility gate. Acceptance remains incomplete until the CPU,
@@ -192,12 +217,48 @@ explicit manual rollback configuration; automatic fallback is prohibited.
 
 ## Contract milestone
 
-Status: implemented in `OpenComputerUseWorkflowKit`; integration and the
-macOS acceptance gate remain.
+Status: implemented and covered by Linux ARM64 workflow tests. Native macOS
+package, desktop approval, and GUI acceptance remain separate gates.
 
 The contract layer owns control envelopes, backend configuration, strict v2
 evidence validation, artifact containment and SHA-256 checks, four-cell visual
 evidence, Open Design evidence, and fail-closed asset-route readiness.
+
+## Host orchestration repair
+
+The host now uses profile-specific stage graphs, UUID run IDs, a fixed
+configured workspace, typed resume submissions, single-executor run locking,
+and atomic metadata-only checkpoints. Resume revalidates referenced files and
+rejects workspace changes. Search candidates pause for explicit selection;
+nonvisual tasks stop after preflight.
+
+Capture runs refresh the GPU check before each desktop/mobile and full/reduced
+motion cell. The Swift validator binds capture-cell v2 manifests to WebM and
+jank files, viewport, consent, cleanup, GPU, and runner egress attestation.
+Motion analyses must match their capture run, source path and hash, and frame
+path/hash pairs. Visual asset-route IDs must match the prepared plan.
+
+The host composes `workflow-manifest.v2` under `.workflow/manifests/` from
+validated stage outputs. Open Design uses its published plugin and
+project/run tools; it requires explicit approval and a validated local design
+artifact. `make workflow-smoke && swift test` passed on Linux ARM64 (43 tests,
+run `20260924T020405Z-1248660-21672`); the final host evidence contract suite
+including wrong-port proxy proof rejection passed (20 tests, run
+`20260924T020653Z-1271957-12322`); `make check-docs` passed (run
+`20260924T021100Z-1296237-18787`). Browser Use passed 128 pytest tests (run
+`20260924T015958Z-1211167-24599`); search passed lint, tests, and build (run
+`20260924T015656Z-1169440-31056`); rollback passed Node tests (run
+`20260924T015811Z-1189781-25671`); Python evidence validation passed 19
+unittests, including wrong-port proxy proof rejection (run
+`20260924T020642Z-1264492-25935`).
+
+Live acceptance is blocked. Browser Use compatibility evidence does not prove
+browser-wide egress or required browser-service reachability, and the installed
+Open Design plugin list is empty. No consent action or network allowlist change
+was made. Do not run four-cell fixture captures or the three-cold/five-warm
+performance comparison until CPU, GPU, egress, fixture, and plugin gates pass.
+The new macOS validation workflow has not produced an artifact because this
+branch has not run in GitHub Actions.
 
 ## macOS GUI acceptance boundary
 

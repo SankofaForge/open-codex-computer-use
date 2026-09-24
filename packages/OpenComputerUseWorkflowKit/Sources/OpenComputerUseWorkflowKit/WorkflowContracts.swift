@@ -4,6 +4,7 @@ private let browserUseCaptureRequiredEnvironmentVariables: Set<String> = [
     "VAST_INSTANCE_ID",
     "VAST_API_KEY",
     "BROWSER_USE_CHROMIUM_PATH",
+    "CAPTURE_EGRESS_ATTESTATION_FILE",
 ]
 
 public enum WorkflowContractVersion {
@@ -35,6 +36,70 @@ public enum WorkflowRunStatus: String, CaseIterable, Codable, Sendable {
     case cancelled
 }
 
+public enum WorkflowTaskProfile: String, CaseIterable, Codable, Sendable {
+    case visualImplementation = "visual-implementation"
+    case evidenceOnly = "evidence-only"
+    case tokenOnly = "token-only"
+    case nonvisual
+
+    public var stages: [WorkflowStage] { stages(preparedAssetIDs: nil) }
+
+    public func stages(preparedAssetIDs: Set<String>?) -> [WorkflowStage] {
+        let stages: [WorkflowStage]
+        switch self {
+        case .visualImplementation:
+            stages = [.preflight, .searchReferences, .prepareReferences, .extractTokens, .checkCaptureGPU, .captureSiteMotion, .submitMotionAnalysis, .extractFrames, .handoffOpenDesign, .resolveAssetRoutes, .validate]
+        case .evidenceOnly:
+            stages = [.preflight, .searchReferences, .prepareReferences, .checkCaptureGPU, .captureSiteMotion, .submitMotionAnalysis, .extractFrames, .validate]
+        case .tokenOnly:
+            stages = [.preflight, .searchReferences, .prepareReferences, .extractTokens, .validate]
+        case .nonvisual:
+            stages = [.preflight]
+        }
+        if self == .visualImplementation, preparedAssetIDs?.isEmpty == true {
+            return stages.filter { $0 != .resolveAssetRoutes }
+        }
+        return stages
+    }
+}
+
+public enum WorkflowResumeSubmission: @unchecked Sendable {
+    case referenceSelection([String: Any])
+    case motionAnalysis(path: String, cellId: String)
+    case approval(actionId: String, approved: Bool)
+    case assetResults(path: String)
+
+    public static func decode(_ value: Any) throws -> Self {
+        guard let object = value as? [String: Any], let kind = object["kind"] as? String else {
+            throw WorkflowContractError(.invalidEvidence, "workflow_resume requires a typed submission")
+        }
+        switch kind {
+        case "reference-selection":
+            guard Set(object.keys) == ["kind", "reference"], let reference = object["reference"] as? [String: Any] else {
+                throw WorkflowContractError(.invalidEvidence, "reference-selection requires only a reference object")
+            }
+            return .referenceSelection(reference)
+        case "motion-analysis":
+            guard Set(object.keys) == ["kind", "path", "cellId"], let path = object["path"] as? String, let cellId = object["cellId"] as? String else {
+                throw WorkflowContractError(.invalidEvidence, "motion-analysis requires path and cellId")
+            }
+            return .motionAnalysis(path: path, cellId: cellId)
+        case "approval":
+            guard Set(object.keys) == ["kind", "actionId", "approved"], let actionId = object["actionId"] as? String, let approved = object["approved"] as? Bool else {
+                throw WorkflowContractError(.invalidEvidence, "approval requires actionId and approved")
+            }
+            return .approval(actionId: actionId, approved: approved)
+        case "asset-results":
+            guard Set(object.keys) == ["kind", "path"], let path = object["path"] as? String else {
+                throw WorkflowContractError(.invalidEvidence, "asset-results requires a workspace-relative path")
+            }
+            return .assetResults(path: path)
+        default:
+            throw WorkflowContractError(.invalidEvidence, "unsupported workflow submission kind")
+        }
+    }
+}
+
 public struct WorkflowStageContext: @unchecked Sendable {
     public let runId: String
     public let workspaceRoot: String
@@ -51,16 +116,61 @@ public struct WorkflowStageContext: @unchecked Sendable {
     }
 
     public func arguments(for stage: WorkflowStage) -> [String: Any] {
-        var arguments = inputs
-        arguments["runId"] = runId
-        arguments["workspaceRoot"] = workspaceRoot
-        arguments["taskProfile"] = taskProfile
-        if !previousResults.isEmpty {
-            arguments["previousResults"] = previousResults.reduce(into: [String: Any]()) { result, entry in
-                result[entry.key.rawValue] = entry.value
-            }
+        let keys: Set<String>
+        switch stage {
+        case .searchReferences: keys = ["query"]
+        case .prepareReferences: keys = ["reference"]
+        case .extractTokens: keys = ["reference"]
+        case .checkCaptureGPU: keys = ["liveUrl", "cellId", "viewport", "motionMode"]
+        case .captureSiteMotion: keys = ["liveUrl", "cellId", "viewport", "motionMode", "gpuCheckId"]
+        case .submitMotionAnalysis: keys = ["path", "cellId"]
+        case .extractFrames: keys = ["analysisPath", "cellId"]
+        case .handoffOpenDesign: keys = ["liveUrl", "designBrief", "motionNotes", "selectedFrames", "projectId", "requestId"]
+        case .resolveAssetRoutes: keys = ["assetPlan", "assetResultsPath"]
+        case .validate: keys = ["manifestPath", "expectedAssetIDs", "assetResultsPath"]
+        case .preflight: keys = []
         }
-        arguments["stage"] = stage.rawValue
+        var arguments = inputs.filter { keys.contains($0.key) }
+        if stage == .preflight {
+            arguments["requiresCapture"] = taskProfile == WorkflowTaskProfile.visualImplementation.rawValue || taskProfile == WorkflowTaskProfile.evidenceOnly.rawValue
+        }
+        if stage == .prepareReferences, arguments["reference"] == nil,
+           let result = previousResults[.searchReferences],
+           let candidates = result["references"] as? [[String: Any]], candidates.count == 1 {
+            arguments["reference"] = candidates[0]
+        }
+        if let prepared = previousResults[.prepareReferences] {
+            if arguments["liveUrl"] == nil { arguments["liveUrl"] = prepared["liveUrl"] ?? prepared["url"] }
+            if arguments["liveUrl"] == nil, let refs = prepared["references"] as? [[String: Any]], refs.count == 1 {
+                arguments["liveUrl"] = refs[0]["liveUrl"]
+            }
+            if arguments["reference"] == nil { arguments["reference"] = prepared["reference"] }
+        }
+        if stage == .extractTokens, arguments["reference"] == nil {
+            arguments["reference"] = (inputs["reference"] as? [String: Any]) ?? (previousResults[.prepareReferences]?["reference"] as? [String: Any])
+        }
+        if stage == .handoffOpenDesign {
+            arguments["workflowRunId"] = runId
+            if arguments["requestId"] == nil { arguments["requestId"] = runId }
+            if arguments["liveUrl"] == nil { arguments["liveUrl"] = (inputs["reference"] as? [String: Any])?["liveUrl"] }
+            if arguments["designBrief"] == nil { arguments["designBrief"] = inputs["designBrief"] }
+            if arguments["motionNotes"] == nil, let analyses = inputs["analysisSubmissions"] as? [[String: Any]] {
+                arguments["motionNotes"] = analyses.map { "\($0["cellId"] ?? "cell"): analysis at \($0["path"] ?? "")" }.joined(separator: "\n")
+            }
+            if arguments["selectedFrames"] == nil, let frames = previousResults[.extractFrames]?["frames"] { arguments["selectedFrames"] = frames }
+        }
+        if let gpu = previousResults[.checkCaptureGPU], arguments["gpuCheckId"] == nil {
+            arguments["gpuCheckId"] = gpu["gpuCheckId"]
+        }
+        if let analysis = previousResults[.submitMotionAnalysis], arguments["analysisPath"] == nil {
+            arguments["analysisPath"] = analysis["path"]
+        }
+        if let assets = previousResults[.prepareReferences], arguments["assetPlan"] == nil {
+            arguments["assetPlan"] = assets["assetPlan"]
+        }
+        if stage == .validate, let plan = previousResults[.prepareReferences]?["assetPlan"] as? [[String: Any]] {
+            arguments["expectedAssetIDs"] = plan.compactMap { $0["assetId"] as? String }
+        }
         return arguments
     }
 }
@@ -219,7 +329,7 @@ public struct WorkflowBackendConfiguration: Codable, Equatable, Sendable {
                 throw WorkflowContractError(.invalidConfiguration, "browser-use-capture does not accept a manual compatibility override")
             }
             guard Set(permittedEnvironmentVariables) == browserUseCaptureRequiredEnvironmentVariables else {
-                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must permit exactly VAST_INSTANCE_ID, VAST_API_KEY, and BROWSER_USE_CHROMIUM_PATH")
+                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must permit exactly VAST_INSTANCE_ID, VAST_API_KEY, BROWSER_USE_CHROMIUM_PATH, and CAPTURE_EGRESS_ATTESTATION_FILE")
             }
         }
         if kind == .openDesign, launchPolicy != .direct {
@@ -319,6 +429,6 @@ private func isEnvironmentVariableName(_ value: String) -> Bool {
 }
 
 private func containsSecretAssignment(_ value: String) -> Bool {
-    let pattern = "(?i)(api[_-]?key|token|secret|password)\\s*="
+    let pattern = "(?i)(?:api[_-]?key|token|secret|password|[A-Z][A-Z0-9_]*)\\s*="
     return value.range(of: pattern, options: .regularExpression) != nil
 }
