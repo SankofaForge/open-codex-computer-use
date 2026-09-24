@@ -33,6 +33,15 @@ jobs:
           swift build --configuration debug --target OpenComputerUse 2>&1 \
             | tee artifacts/macos-workflow-validation/build.log
 
+      - name: Stage the child MCP test backend
+        run: |
+          set -o pipefail
+          swift build --configuration debug --product WorkflowMCPFakeBackend
+          product_bin="$(swift build --configuration debug --show-bin-path)"
+          mkdir -p .build/out/Products/Debug
+          install -m 0755 "${product_bin}/WorkflowMCPFakeBackend" \
+            .build/out/Products/Debug/WorkflowMCPFakeBackend
+
       - name: Run workflow contracts and child MCP integration tests
         run: |
           set -o pipefail

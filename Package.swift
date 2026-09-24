@@ -7,6 +7,10 @@ var products: [Product] = [
         name: "OpenComputerUseWorkflowKit",
         targets: ["OpenComputerUseWorkflowKit"]
     ),
+    .executable(
+        name: "WorkflowMCPFakeBackend",
+        targets: ["WorkflowMCPFakeBackend"]
+    ),
 ]
 
 var targets: [Target] = [
