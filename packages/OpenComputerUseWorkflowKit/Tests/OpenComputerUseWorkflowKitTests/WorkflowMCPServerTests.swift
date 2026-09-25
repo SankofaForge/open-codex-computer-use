@@ -9,6 +9,11 @@ final class WorkflowMCPServerTests: XCTestCase {
         let server = try WorkflowMCPServer(configuration: WorkflowConfiguration(workspaceRoot: root.path, backends: []), dispatcher: dispatcher)
         let runID = UUID().uuidString.lowercased()
         let response = try XCTUnwrap(object(server.handle(line: call("workflow_run", ["runId": runID, "workspaceRoot": root.path, "taskProfile": "nonvisual", "profileReason": "Documentation-only change."]))))
+        let toolResult = response["result"] as? [String: Any]
+        let content = toolResult?["content"] as? [[String: Any]]
+        XCTAssertFalse(toolResult?["isError"] as? Bool ?? true)
+        XCTAssertEqual(content?.first?["type"] as? String, "text")
+        XCTAssertNotNil(content?.first?["text"] as? String)
         XCTAssertEqual(result(response)["status"] as? String, "running")
         let complete = try waitForStatus(server, runId: runID, expected: "complete")
         XCTAssertEqual(complete["status"] as? String, "complete")
@@ -90,7 +95,17 @@ final class WorkflowMCPServerTests: XCTestCase {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    private func result(_ response: [String: Any]) -> [String: Any] { response["result"] as? [String: Any] ?? [:] }
+    private func result(_ response: [String: Any]) -> [String: Any] {
+        guard
+            let toolResult = response["result"] as? [String: Any],
+            let content = toolResult["content"] as? [[String: Any]],
+            let text = content.first(where: { $0["type"] as? String == "text" })?["text"] as? String,
+            let data = text.data(using: .utf8),
+            let decoded = try? JSONSerialization.jsonObject(with: data),
+            let value = decoded as? [String: Any]
+        else { return [:] }
+        return value
+    }
 }
 
 private final class RecordingDispatcher: WorkflowStageDispatcher, @unchecked Sendable {
