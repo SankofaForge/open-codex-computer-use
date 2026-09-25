@@ -80,10 +80,11 @@ public func parseOpenComputerUseCLI(arguments: [String]) throws -> OpenComputerU
     case "mcp":
         return try parseSimpleCommand(name: "mcp", arguments: Array(arguments.dropFirst()), result: .mcp)
     case "workflow-mcp":
-        guard arguments.count == 2, arguments[0] == "--config", !arguments[1].isEmpty else {
+        let commandArguments = Array(arguments.dropFirst())
+        guard commandArguments.count == 2, commandArguments[0] == "--config", !commandArguments[1].isEmpty else {
             throw OpenComputerUseCLIError(message: "workflow-mcp requires --config <path>", helpCommand: "workflow-mcp")
         }
-        return .workflowMCP(config: arguments[1])
+        return .workflowMCP(config: commandArguments[1])
     case "doctor":
         return try parseSimpleCommand(name: "doctor", arguments: Array(arguments.dropFirst()), result: .doctor)
     case "list-apps":

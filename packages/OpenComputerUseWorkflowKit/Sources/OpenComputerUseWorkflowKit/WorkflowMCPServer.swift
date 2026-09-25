@@ -981,17 +981,17 @@ public final class WorkflowMCPServer {
         switch name {
         case "workflow_run":
             guard let workspace = arguments["workspaceRoot"] as? String, let profile = arguments["taskProfile"] as? String else { return error(id, -32602, "workflow_run requires workspaceRoot and taskProfile") }
-            return try result(id, manager.start(runId: runId, workspaceRoot: URL(fileURLWithPath: workspace), taskProfile: profile, inputs: arguments))
-        case "workflow_status": return try result(id, manager.status(runId: runId))
+            return try toolResult(id, manager.start(runId: runId, workspaceRoot: URL(fileURLWithPath: workspace), taskProfile: profile, inputs: arguments))
+        case "workflow_status": return try toolResult(id, manager.status(runId: runId))
         case "workflow_resume":
             let root = URL(fileURLWithPath: arguments["workspaceRoot"] as? String ?? manager.defaultWorkspaceRoot.path)
             guard let rawSubmission = arguments["submission"] else { return error(id, -32602, "workflow_resume requires submission") }
-            return try result(id, manager.resume(runId: runId, workspaceRoot: root, submission: WorkflowResumeSubmission.decode(rawSubmission)))
-        case "workflow_cancel": return try result(id, manager.cancel(runId: runId, reason: arguments["reason"] as? String))
+            return try toolResult(id, manager.resume(runId: runId, workspaceRoot: root, submission: WorkflowResumeSubmission.decode(rawSubmission)))
+        case "workflow_cancel": return try toolResult(id, manager.cancel(runId: runId, reason: arguments["reason"] as? String))
         default:
             let stage = WorkflowStage(rawValue: String(name.dropFirst(9))) ?? .validate
             let context = WorkflowStageContext(runId: runId, workspaceRoot: arguments["workspaceRoot"] as? String ?? ".", taskProfile: arguments["taskProfile"] as? String ?? "evidence-only", inputs: arguments)
-            return try result(id, manager.dispatchOne(stage: stage, context: context))
+            return try toolResult(id, manager.dispatchOne(stage: stage, context: context))
         }
     }
 
@@ -1045,6 +1045,10 @@ public final class WorkflowMCPServer {
     }
 
     private func result(_ id: Any, _ value: [String: Any]) throws -> String { try encode(["jsonrpc": "2.0", "id": id, "result": value]) }
+    private func toolResult(_ id: Any, _ value: [String: Any]) throws -> String {
+        let text = try encode(value)
+        return try encode(["jsonrpc": "2.0", "id": id, "result": ["content": [["type": "text", "text": text]], "isError": false]])
+    }
     private func error(_ id: Any?, _ code: Int, _ message: String) -> String { (try? encode(["jsonrpc": "2.0", "id": id ?? NSNull(), "error": ["code": code, "message": message]])) ?? "" }
     private func encode(_ value: [String: Any]) throws -> String { String(data: try JSONSerialization.data(withJSONObject: value), encoding: .utf8)! }
 }
