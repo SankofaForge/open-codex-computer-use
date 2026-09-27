@@ -1,0 +1,34 @@
+name: Docs Gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/docs-check.yml"
+      - AGENTS.md
+      - CONTRIBUTING.md
+      - Makefile
+      - README.md
+      - docs/**
+      - scripts/check-docs.sh
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/docs-check.yml"
+      - AGENTS.md
+      - CONTRIBUTING.md
+      - Makefile
+      - README.md
+      - docs/**
+      - scripts/check-docs.sh
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check required documentation
+        run: make check-docs

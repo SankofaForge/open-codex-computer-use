@@ -28,10 +28,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -47,15 +47,15 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        uses: actions/setup-go@v7
         with:
           go-version: "1.22.x"
 
@@ -114,7 +114,7 @@ jobs:
         run: npm run npm:pack
 
       - name: Upload npm release artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: npm-release-artifacts
           path: |
@@ -152,7 +152,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@v7
 
       - name: Make DMG build script executable
         run: chmod +x ./scripts/build-cursor-motion-dmg.sh
@@ -237,7 +237,7 @@ jobs:
           xcrun stapler staple "${dmg_path}"
 
       - name: Upload Cursor Motion release artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7
         with:
           name: cursor-motion-release-artifact
           path: dist/release/cursor-motion/*.dmg

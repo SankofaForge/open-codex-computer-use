@@ -16,7 +16,12 @@
 
 当新项目的技术栈确定后，你应该继续在 `scripts/release-package.sh` 这条真实构建链路上扩展，而不是另起一套平行流程。
 
-所有 GitHub Actions 都已经 pin 到 commit SHA。后续升级 action 时，也要继续保持这个约束。
+GitHub Actions 使用稳定的单数字主版本标签。升级 action 前先检查该版本的兼容性，并同步更新对应的验证命令。
+
+## CI 门禁
+
+- `.github/workflows/docs-check.yml`：文档、仓库说明或文档检查脚本变动时运行 `make check-docs`。纯文档变更不需要启动 Swift 测试。
+- `.github/workflows/workflow-macos-validation.yml`：Swift workflow 代码变动时构建 macOS runtime，并运行 workflow contract 与 child MCP 集成测试。
 
 ## 推荐接入顺序
 
