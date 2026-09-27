@@ -15,10 +15,10 @@
 
 ## 已知关键依赖
 
-- macOS production app-agent 路径必须给 `Open Computer Use.app` 授权 `Accessibility` 与 `Screen Recording`；终端本身不应该再是必需授权对象。direct XCTest 会由测试进程直接调用 CoreGraphics/SkyLight，因此该独立测试的权限归属是实际启动 XCTest 的 test-host；这不改变 production app-agent 的权限边界。
-- Codex plugin 的 code-first surface 需要可执行的 `node`。REPL adapter 会为 native MCP 保留独立 child lifecycle，JavaScript kernel 则放在 Worker 中；脚本超时会丢弃该 Worker 的全部 bindings，并由下一次调用使用新的 kernel。
-- npm CLI 本身也由 Node 启动。`ocu js` 只在一次执行期间保留 Worker/native MCP child；`ocu repl` 在当前 terminal session 内保留它们；`ocu mcp` 则跟随 stdio connection。macOS 的隐藏 app agent 是独立的权限身份，可能在这些前台命令退出后继续驻留。
-- `ocu --help` 始终展示 `js` / `repl`；`ocu capabilities --json` 可在不启动 native MCP 的情况下检查 Node、adapter、kernel 和 native artifact。当前 npm shebang 仍要求 shell 能从 PATH 启动 Node，所以“完全无 Node”必须在更外层用 native bootstrap 解决。
+- macOS production app-agent 需要 `Open Computer Use.app` 获得 `Accessibility` 和 `Screen Recording` 权限；终端本身不需要这些权限。Direct XCTest 由测试进程直接调用 CoreGraphics/SkyLight，因此权限属于启动 XCTest 的 test host。这不会改变 production app-agent 的权限边界。
+- Codex plugin 的 code-first surface 需要可执行的 `node`。REPL adapter 会为 native MCP 保留独立的 child process，JavaScript kernel 则运行在 Worker 中。脚本超时会结束该 Worker 并丢弃其中的 bindings；下次调用会启动新的 kernel。
+- npm CLI 也由 Node 启动。`ocu js` 只在本次执行期间保留 Worker 和 native MCP child；`ocu repl` 会在当前 terminal session 内保留它们；`ocu mcp` 则随 stdio connection 的生命周期运行。macOS 隐藏 app agent 使用独立的权限身份，前台命令退出后它仍可能驻留。
+- `ocu --help` 始终列出 `js` 和 `repl`；`ocu capabilities --json` 可在不启动 native MCP 的情况下检查 Node、adapter、kernel 和 native artifact。npm shebang 仍需要 shell 从 PATH 启动 Node，所以完全不依赖 Node 的启动方式必须在 npm 之外由 native bootstrap 提供。
 - macOS `click_method=sky_click` 额外依赖 SkyLight / ApplicationServices 私有符号 `SLEventPostToPid`、`SLEventSetIntegerValueField`、`CGEventSetWindowLocation`、`SLPSPostEventRecordTo` 和 `GetProcessForPID`。运行时会动态探测并 fail closed，但 macOS 更新、签名方式或目标 app 输入策略变化仍可能让后台投递失效。受控实机回归除 DOM、前台 PID、鼠标和 z-order 外，还必须验证前台 AppKit active、key window、first responder 以及 resign/key-loss 计数。
 - smoke suite、两个 SkyClick 实机回归和 production app-agent acceptance 都依赖本地登录的 GUI session；无头环境、SSH tty 或远程 shell 不能满足 GUI acceptance gate。
 - 普通 app 的 `get_app_state` 结果依赖 AX tree 和窗口截图，复杂 app 上输出会有差异；Electron/WebView app 的 AX tree 通常很深，当前会压缩空 wrapper 并放宽遍历深度，以优先保留可操作文本、按钮和输入框。
