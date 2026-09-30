@@ -77,6 +77,11 @@ private final class WorkflowRunManager: @unchecked Sendable {
         }
     }
 
+    /// Reports a run's current envelope. This is not a pure read: if the
+    /// checkpointed run is still marked "running" with no pending gap (e.g.
+    /// after a host restart interrupted it mid-stage), status re-validates its
+    /// checkpoint artifacts and resumes stage execution as a side effect, so a
+    /// client can make forward progress simply by polling workflow_status.
     func status(runId: String) -> [String: Any] {
         guard (try? validateRunID(runId)) != nil else { return workflowEnvelope(runId: runId, stage: .preflight, status: .blocked, outputs: [:], blockedReason: "runId must be a UUID.") }
         return queue.sync {
