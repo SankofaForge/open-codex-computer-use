@@ -905,7 +905,12 @@ private final class WorkflowRunManager: @unchecked Sendable {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: file, options: .atomic)
-        } catch { }
+        } catch {
+            // A failed checkpoint write leaves this run unrecoverable after a
+            // crash; report it rather than losing the failure silently.
+            let message = "workflow checkpoint write failed for run \(record.runId): \(error)\n"
+            FileHandle.standardError.write(Data(message.utf8))
+        }
     }
 
     private func loadCheckpoint(runId: String, workspaceRoot: URL) -> WorkflowRunRecord? {
