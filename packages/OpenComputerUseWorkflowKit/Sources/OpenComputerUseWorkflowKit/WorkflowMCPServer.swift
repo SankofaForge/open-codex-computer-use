@@ -1043,9 +1043,27 @@ public final class WorkflowMCPServer {
                     ["type": "object", "required": ["kind", "path"], "properties": ["kind": ["const": "asset-results"], "path": ["type": "string"]], "additionalProperties": false],
                 ]],
             ]
-            return ["name": name, "description": "Design-inspiration workflow operation", "inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false]]
+            return ["name": name, "description": Self.toolDescriptions[name] ?? "Design-inspiration workflow operation", "inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false]]
         }
     }
+
+    private static let toolDescriptions: [String: String] = [
+        "workflow_preflight": "Validate a workflow run's configuration and capture requirements before any stage executes.",
+        "workflow_search_references": "Search for candidate design references for the current workflow run.",
+        "workflow_prepare_references": "Prepare and verify a selected reference's live URL and asset requirements.",
+        "workflow_extract_tokens": "Extract design tokens from a prepared reference.",
+        "workflow_check_capture_gpu": "Verify GPU capture readiness for a capture cell before recording site motion.",
+        "workflow_capture_site_motion": "Capture site motion evidence for one viewport and motion-mode cell.",
+        "workflow_submit_motion_analysis": "Submit a validated motion analysis for a captured cell.",
+        "workflow_extract_frames": "Extract still frames referenced by a motion analysis.",
+        "workflow_handoff_open_design": "Hand off the approved brief and evidence to Open Design for implementation.",
+        "workflow_resolve_asset_routes": "Resolve asset routes for the prepared asset plan.",
+        "workflow_validate": "Validate the composed workflow manifest and its evidence.",
+        "workflow_run": "Start, or reattach to, a workflow run for a given task profile.",
+        "workflow_status": "Get a workflow run's current status. May resume checkpointed execution as a side effect if work was pending.",
+        "workflow_resume": "Resume a partial workflow run with a typed submission: reference selection, motion analysis, approval, or asset results.",
+        "workflow_cancel": "Cancel a workflow run at any non-terminal stage, including one waiting on human input.",
+    ]
 
     private func result(_ id: Any, _ value: [String: Any]) throws -> String { try encode(["jsonrpc": "2.0", "id": id, "result": value]) }
     private func toolResult(_ id: Any, _ value: [String: Any]) throws -> String {

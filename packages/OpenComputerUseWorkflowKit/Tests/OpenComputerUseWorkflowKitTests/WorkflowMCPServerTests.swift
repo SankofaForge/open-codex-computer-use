@@ -67,6 +67,18 @@ final class WorkflowMCPServerTests: XCTestCase {
         XCTAssertGreaterThan(dispatcher.cancelCount, 0)
     }
 
+    func testToolDescriptionsAreDistinctAndSpecific() throws {
+        let server = try WorkflowMCPServer(configuration: WorkflowConfiguration(workspaceRoot: ".", backends: []), dispatcher: RecordingDispatcher())
+        let payload: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": [:]]
+        let line = String(data: try JSONSerialization.data(withJSONObject: payload), encoding: .utf8)!
+        let response = try XCTUnwrap(object(server.handle(line: line)))
+        let tools = try XCTUnwrap((response["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        let descriptions = tools.compactMap { $0["description"] as? String }
+        XCTAssertEqual(descriptions.count, tools.count)
+        XCTAssertEqual(Set(descriptions).count, descriptions.count, "every tool should have its own description")
+        XCTAssertFalse(descriptions.contains("Design-inspiration workflow operation"))
+    }
+
     func testUnsupportedControlVersionIsRejected() throws {
         let server = try WorkflowMCPServer(configuration: WorkflowConfiguration(workspaceRoot: ".", backends: []), dispatcher: RecordingDispatcher())
         let response = try XCTUnwrap(object(server.handle(line: call("workflow_status", ["runId": UUID().uuidString, "schemaVersion": "workflow-control.v1"]))))
