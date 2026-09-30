@@ -428,6 +428,12 @@ private func isEnvironmentVariableName(_ value: String) -> Bool {
 }
 
 private func containsSecretAssignment(_ value: String) -> Bool {
-    let pattern = "(?i)(?:api[_-]?key|token|secret|password|[A-Z][A-Z0-9_]*)\\s*="
-    return value.range(of: pattern, options: .regularExpression) != nil
+    // Mirrors ChildMCPTransport's diagnostic redaction: catches both
+    // shell-style (`KEY=value`) and JSON/CLI-flag-style (`key: value`,
+    // `Bearer <token>`) credential shapes, not assignment alone.
+    let patterns = [
+        "(?i)(?:api[_-]?key|token|secret|password|[A-Z][A-Z0-9_]*)\\s*[=:]",
+        "(?i)bearer\\s+[A-Za-z0-9._-]+",
+    ]
+    return patterns.contains { value.range(of: $0, options: .regularExpression) != nil }
 }
