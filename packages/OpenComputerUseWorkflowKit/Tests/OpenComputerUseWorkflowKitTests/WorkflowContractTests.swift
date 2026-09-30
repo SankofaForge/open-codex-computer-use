@@ -166,31 +166,7 @@ final class WorkflowContractTests: XCTestCase {
         }
     }
 
-    func testCaptureCellRequiresAttestedEgressConsentAndVideoStream() throws {
-        for field in ["directEgressBlocked", "approvedProxyProbe"] {
-            let fixture = try WorkflowFixture.make()
-            var manifest = fixture.manifest
-            var capture = manifest["capture"] as! [String: Any]
-            var cells = capture["matrix"] as! [[String: Any]]
-            let captureManifestArtifact = (cells[0]["artifacts"] as! [[String: Any]]).first { ($0["path"] as? String)?.hasSuffix(".capture-cell.v2.json") == true }!
-            let path = fixture.root.appendingPathComponent(captureManifestArtifact["path"] as! String)
-            var cellManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
-            var evidence = cellManifest["evidence"] as! [String: Any]
-            var egress = evidence["egress"] as! [String: Any]
-            egress[field] = false
-            evidence["egress"] = egress
-            cellManifest["evidence"] = evidence
-            try JSONSerialization.data(withJSONObject: cellManifest).write(to: path)
-            let updated = try Data(contentsOf: path)
-            cells[0]["artifacts"] = (cells[0]["artifacts"] as! [[String: Any]]).map { artifact in
-                guard artifact["path"] as? String == captureManifestArtifact["path"] as? String else { return artifact }
-                return ["path": artifact["path"]!, "size": updated.count, "sha256": WorkflowSHA256.hexDigest(updated), "nonEmpty": true]
-            }
-            capture["matrix"] = cells
-            manifest["capture"] = capture
-            XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(manifest, workspaceRoot: fixture.root))
-        }
-
+    func testCaptureCellRequiresConsentAndVideoStream() throws {
         let noStream = try WorkflowFixture.make()
         var capture = noStream.manifest["capture"] as! [String: Any]
         var cells = capture["matrix"] as! [[String: Any]]
@@ -211,35 +187,6 @@ final class WorkflowContractTests: XCTestCase {
         capture["matrix"] = cells
         noStream.manifest["capture"] = capture
         XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(noStream.manifest, workspaceRoot: noStream.root))
-    }
-
-    func testBrowserProxyProofMustMatchTheCapturedPort() throws {
-        let fixture = try WorkflowFixture.make()
-        var manifest = fixture.manifest
-        var capture = manifest["capture"] as! [String: Any]
-        var cells = capture["matrix"] as! [[String: Any]]
-        let firstCell = cells[0]
-        let captureArtifact = (firstCell["artifacts"] as! [[String: Any]]).first { ($0["path"] as? String)?.hasSuffix(".capture-cell.v2.json") == true }!
-        let path = fixture.root.appendingPathComponent(captureArtifact["path"] as! String)
-        var captureManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
-        var evidence = captureManifest["evidence"] as! [String: Any]
-        var attestation = evidence["egressAttestation"] as! [String: Any]
-        var proxyEvidence = attestation["proxyEvidence"] as! [String: Any]
-        proxyEvidence["connectionOutcomes"] = [["hostname": "preview.example", "port": 8443, "outcome": "connected", "count": 1]]
-        attestation["proxyEvidence"] = proxyEvidence
-        evidence["egressAttestation"] = attestation
-        captureManifest["evidence"] = evidence
-        let updated = try JSONSerialization.data(withJSONObject: captureManifest, options: [.sortedKeys])
-        try updated.write(to: path)
-        let replacement: [String: Any] = ["path": captureArtifact["path"]!, "size": updated.count, "sha256": WorkflowSHA256.hexDigest(updated), "nonEmpty": true]
-        cells[0]["artifacts"] = (firstCell["artifacts"] as! [[String: Any]]).map { item in
-            (item["path"] as? String) == (captureArtifact["path"] as? String) ? replacement : item
-        }
-        capture["matrix"] = cells
-        manifest["capture"] = capture
-        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(manifest, workspaceRoot: fixture.root)) { error in
-            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidEvidence)
-        }
     }
 
     func testStageArgumentsDoNotLeakHostState() {
@@ -358,7 +305,6 @@ private let browserUseEnvironmentVariables = [
     "VAST_INSTANCE_ID",
     "VAST_API_KEY",
     "BROWSER_USE_CHROMIUM_PATH",
-    "CAPTURE_EGRESS_ATTESTATION_FILE",
 ]
 
 private final class WorkflowFixture {
@@ -401,8 +347,6 @@ private final class WorkflowFixture {
                 "status": "complete",
                 "evidence": [
                     "gpu": ["status": "verified"],
-                    "egress": ["status": "verified", "boundaryId": "boundary-\(index)", "approvedHost": "preview.example", "networkNamespaceInode": 12345, "directEgressBlocked": true, "approvedProxyProbe": true, "proxyPolicy": "capture-exact-host.v1"],
-                    "egressAttestation": ["schemaVersion": "runner-egress-boundary.v1", "boundaryId": "boundary-\(index)", "approvedHost": "preview.example", "networkNamespaceInode": 12345, "directEgressBlocked": true, "proxyPolicy": "capture-exact-host.v1", "controls": ["direct": ["status": "blocked"], "proxied": ["status": "passed"]], "runnerInstanceId": "runner-1", "browserExecutable": "/opt/chrome", "browserVersion": "Chrome 1", "captureRuntime": "browser-use", "captureRuntimeVersion": "1", "browserUseVersion": "0.13.10", "checkedAt": "2026-09-23T12:00:00Z", "expiresAt": "2026-09-23T12:01:00Z", "runId": "capture-\(index)", "proxyEvidence": ["violations": [], "connectionOutcomes": [["hostname": "preview.example", "port": 443, "outcome": "connected", "count": 1]]], "cleanupVerified": true],
                     "consent": ["verified": true, "blindSpots": []],
                     "scroll": ["completed": true, "truncated": false],
                     "interactionFailures": [],

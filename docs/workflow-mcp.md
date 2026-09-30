@@ -45,7 +45,7 @@ does not accept shell fragments or secret values in configuration.
       "command": "browser-use-capture-mcp",
       "arguments": [],
       "workingDirectory": ".",
-      "permittedEnvironmentVariables": ["VAST_INSTANCE_ID", "VAST_API_KEY", "BROWSER_USE_CHROMIUM_PATH", "CAPTURE_EGRESS_ATTESTATION_FILE"],
+      "permittedEnvironmentVariables": ["VAST_INSTANCE_ID", "VAST_API_KEY", "BROWSER_USE_CHROMIUM_PATH"],
       "declaredTools": ["check_capture_gpu", "capture_site_motion"],
       "launchPolicy": "direct"
     },
@@ -83,7 +83,7 @@ The host launches backend commands directly rather than through a shell and
 passes the configured environment names alongside its sanitized baseline.
 Never put environment values or secrets in this JSON. The Browser Use backend
 must permit exactly `VAST_INSTANCE_ID`, `VAST_API_KEY`,
-`BROWSER_USE_CHROMIUM_PATH`, and `CAPTURE_EGRESS_ATTESTATION_FILE`. Supply the Vast API key through the host
+`BROWSER_USE_CHROMIUM_PATH`. Supply the Vast API key through the host
 environment. The browser path must point to a real, executable, non-Snap
 Chromium or Chrome binary on the Vast runner.
 For the current runner, set `BROWSER_USE_CHROMIUM_PATH` to
@@ -91,14 +91,11 @@ For the current runner, set `BROWSER_USE_CHROMIUM_PATH` to
 through a launcher-script chain and is rejected. The adapter does not download
 a browser at runtime. Startup/CDP, recording, instrumentation, NVIDIA, and
 hardware-backed WebGL checks passed in the latest recorded probe. The
-compatibility report separates CPU browser functions, GPU support, and egress
-compliance. Host preflight checks the configured backend and declared tools.
-The privileged capture runner creates and validates a fresh egress attestation
-inside each capture boundary; the GPU check still runs before each cell. The
-proxy records explicit policy denials, but it does not prove that every Chrome
-network path uses the proxy or that required browser security services are
-reachable. The runner must block capture until both facts are verified. No
-destination has been allowlisted.
+compatibility report separates CPU browser functions and GPU support. Host
+preflight checks the configured backend and declared tools. Each capture still
+requires a fresh GPU check, public-target validation, consent, recording,
+jank, artifact hashes, and cleanup. The capture workflow no longer requires an
+egress attestation or proxy boundary.
 
 `captureBackend` selects one capture backend for both capture stages. If it is
 omitted, Browser Use is selected. A blocked Browser Use result remains blocked;

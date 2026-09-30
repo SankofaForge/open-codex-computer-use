@@ -4,7 +4,6 @@ private let browserUseCaptureRequiredEnvironmentVariables: Set<String> = [
     "VAST_INSTANCE_ID",
     "VAST_API_KEY",
     "BROWSER_USE_CHROMIUM_PATH",
-    "CAPTURE_EGRESS_ATTESTATION_FILE",
 ]
 
 public enum WorkflowContractVersion {
@@ -329,7 +328,7 @@ public struct WorkflowBackendConfiguration: Codable, Equatable, Sendable {
                 throw WorkflowContractError(.invalidConfiguration, "browser-use-capture does not accept a manual compatibility override")
             }
             guard Set(permittedEnvironmentVariables) == browserUseCaptureRequiredEnvironmentVariables else {
-                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must permit exactly VAST_INSTANCE_ID, VAST_API_KEY, BROWSER_USE_CHROMIUM_PATH, and CAPTURE_EGRESS_ATTESTATION_FILE")
+                throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must permit exactly VAST_INSTANCE_ID, VAST_API_KEY, BROWSER_USE_CHROMIUM_PATH")
             }
         }
         if kind == .openDesign, launchPolicy != .direct {

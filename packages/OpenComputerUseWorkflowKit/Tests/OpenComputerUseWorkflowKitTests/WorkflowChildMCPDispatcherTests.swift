@@ -194,5 +194,4 @@ private let browserUseEnvironmentVariables = [
     "VAST_INSTANCE_ID",
     "VAST_API_KEY",
     "BROWSER_USE_CHROMIUM_PATH",
-    "CAPTURE_EGRESS_ATTESTATION_FILE",
 ]

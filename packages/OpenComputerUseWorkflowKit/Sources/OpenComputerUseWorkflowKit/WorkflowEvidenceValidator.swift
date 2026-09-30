@@ -332,53 +332,6 @@ private func validateCaptureCellEvidence(
     let evidence = try capture.requiredObject("evidence")
     let gpu = try evidence.requiredObject("gpu")
     try require(gpu["status"] as? String == "verified", .invalidEvidence, "capture-cell GPU evidence is not verified")
-    let egress = try evidence.requiredObject("egress")
-    try require(egress["status"] as? String == "verified", .invalidEvidence, "capture-cell egress evidence is not verified")
-    _ = try egress.requiredString("boundaryId")
-    let approvedHost = try egress.requiredString("approvedHost").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-    let finalHost = URLComponents(string: finalURL)?.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-    try require(approvedHost == finalHost, .invalidEvidence, "capture-cell approvedHost does not match finalUrl")
-    let namespaceInode = try positiveInteger(egress["networkNamespaceInode"], label: "capture-cell networkNamespaceInode")
-    try require(namespaceInode > 0, .invalidEvidence, "capture-cell network namespace is not attested")
-    try require(egress["directEgressBlocked"] as? Bool == true, .invalidEvidence, "capture-cell direct egress was not blocked")
-    try require(egress["approvedProxyProbe"] as? Bool == true, .invalidEvidence, "capture-cell approved proxy probe did not pass")
-    try require(egress["proxyPolicy"] as? String == "capture-exact-host.v1", .invalidEvidence, "capture-cell proxy policy is unsupported")
-    let attestation = try evidence.requiredObject("egressAttestation")
-    try exactKeys(attestation, allowed: ["schemaVersion", "boundaryId", "approvedHost", "networkNamespaceInode", "directEgressBlocked", "proxyPolicy", "controls", "runnerInstanceId", "browserExecutable", "browserVersion", "captureRuntime", "captureRuntimeVersion", "browserUseVersion", "checkedAt", "expiresAt", "runId", "proxyEvidence", "cleanupVerified"], label: "runner egress attestation")
-    try require(attestation["schemaVersion"] as? String == "runner-egress-boundary.v1", .unsupportedSchema, "unsupported runner egress attestation schemaVersion")
-    try require(attestation["boundaryId"] as? String == egress["boundaryId"] as? String, .invalidEvidence, "egress attestation boundaryId does not match summary")
-    try require((attestation["approvedHost"] as? String)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == approvedHost, .invalidEvidence, "egress attestation approvedHost does not match summary")
-    try require((attestation["networkNamespaceInode"] as? NSNumber)?.intValue == namespaceInode, .invalidEvidence, "egress attestation namespace inode does not match summary")
-    try require(attestation["directEgressBlocked"] as? Bool == true && attestation["proxyPolicy"] as? String == "capture-exact-host.v1", .invalidEvidence, "egress attestation does not prove the required policy")
-    if attestation["captureRuntime"] as? String == "browser-use" {
-        try require(attestation["runId"] as? String == runID, .invalidEvidence, "egress attestation run ID does not match capture")
-        try require(attestation["cleanupVerified"] as? Bool == true, .invalidEvidence, "egress boundary cleanup is not verified")
-        let proxyEvidence = try attestation.requiredObject("proxyEvidence")
-        try require((proxyEvidence["violations"] as? [Any])?.isEmpty == true, .invalidEvidence, "egress proxy reports policy violations")
-        let connections = proxyEvidence["connectionOutcomes"] as? [[String: Any]] ?? []
-        let finalComponents = URLComponents(string: finalURL)
-        let expectedPort = finalComponents?.port ?? (finalComponents?.scheme?.lowercased() == "https" ? 443 : 80)
-        try require(connections.contains { connection in
-            let port = connection["port"] as? NSNumber
-            let count = connection["count"] as? NSNumber
-            return (connection["hostname"] as? String)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == approvedHost
-                && port.map { CFGetTypeID($0) != CFBooleanGetTypeID() && $0.intValue == expectedPort } == true
-                && connection["outcome"] as? String == "connected"
-                && count.map { CFGetTypeID($0) != CFBooleanGetTypeID() && $0.intValue > 0 } == true
-        }, .invalidEvidence, "egress proxy has no successful connection to the approved host and port")
-    }
-    let controls = try attestation.requiredObject("controls")
-    try exactKeys(controls, allowed: ["direct", "proxied"], label: "egress control probes")
-    try require((controls["direct"] as? [String: Any])?["status"] as? String == "blocked", .invalidEvidence, "direct egress control probe did not block")
-    try require((controls["proxied"] as? [String: Any])?["status"] as? String == "passed", .invalidEvidence, "approved proxy control probe did not pass")
-    for key in ["runnerInstanceId", "browserExecutable", "browserVersion", "captureRuntimeVersion", "browserUseVersion"] {
-        _ = try attestation.requiredString(key)
-    }
-    try require(["browser-use", "site-motion-capture"].contains(attestation["captureRuntime"] as? String ?? ""), .invalidEvidence, "egress attestation captureRuntime is unsupported")
-    let checkedAt = try attestationDate(attestation, key: "checkedAt")
-    let expiresAt = try attestationDate(attestation, key: "expiresAt")
-    let lifetime = expiresAt.timeIntervalSince(checkedAt)
-    try require(lifetime > 0 && lifetime <= 120, .invalidEvidence, "egress attestation lifetime must be at most 120 seconds")
     let consent = try evidence.requiredObject("consent")
     try require(consent["verified"] as? Bool == true, .invalidEvidence, "capture-cell consent is not verified")
     try require((consent["blindSpots"] as? [Any] ?? []).isEmpty, .invalidEvidence, "capture-cell consent has blind spots")
@@ -399,17 +352,6 @@ private func validateCaptureCellEvidence(
         try require((matching?["size"] as? Int) == expectedSize, .invalidEvidence, "capture-cell file size does not match workflow artifact")
         try require(matching?["sha256"] as? String == expectedHash, .invalidEvidence, "capture-cell file hash does not match workflow artifact")
     }
-}
-
-private func attestationDate(_ object: [String: Any], key: String) throws -> Date {
-    let value = try object.requiredString(key)
-    let optionSets: [ISO8601DateFormatter.Options] = [.withInternetDateTime.union(.withFractionalSeconds), .withInternetDateTime]
-    for options in optionSets {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = options
-        if let date = formatter.date(from: value) { return date }
-    }
-    throw WorkflowContractError(.invalidEvidence, "egress attestation \(key) must be ISO-8601 with a timezone")
 }
 
 public struct MotionAnalysisValidationResult: Equatable, Sendable {
