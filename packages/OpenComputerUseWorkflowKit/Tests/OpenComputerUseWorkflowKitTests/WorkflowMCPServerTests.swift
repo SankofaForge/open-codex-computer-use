@@ -54,6 +54,19 @@ final class WorkflowMCPServerTests: XCTestCase {
         XCTAssertGreaterThan(dispatcher.cancelCount, 0)
     }
 
+    func testCancelStopsARunAwaitingHumanInput() throws {
+        let root = try temporaryRoot()
+        let dispatcher = ReferenceSelectionDispatcher()
+        let server = try WorkflowMCPServer(configuration: WorkflowConfiguration(workspaceRoot: root.path, backends: []), dispatcher: dispatcher)
+        let runID = UUID().uuidString.lowercased()
+        _ = server.handle(line: call("workflow_run", ["runId": runID, "workspaceRoot": root.path, "taskProfile": "token-only", "query": "brand redesign reference"]))
+        let partial = try waitForStatus(server, runId: runID, expected: "partial")
+        XCTAssertEqual((partial["gaps"] as? [[String: Any]])?.first?["code"] as? String, "reference_selection_required")
+        let cancelled = try XCTUnwrap(object(server.handle(line: call("workflow_cancel", ["runId": runID]))))
+        XCTAssertEqual(result(cancelled)["status"] as? String, "cancelled")
+        XCTAssertGreaterThan(dispatcher.cancelCount, 0)
+    }
+
     func testUnsupportedControlVersionIsRejected() throws {
         let server = try WorkflowMCPServer(configuration: WorkflowConfiguration(workspaceRoot: ".", backends: []), dispatcher: RecordingDispatcher())
         let response = try XCTUnwrap(object(server.handle(line: call("workflow_status", ["runId": UUID().uuidString, "schemaVersion": "workflow-control.v1"]))))
@@ -121,6 +134,26 @@ private final class RecordingDispatcher: WorkflowStageDispatcher, @unchecked Sen
         lock.lock()
         stages.append(stage)
         lock.unlock()
+        return ["stage": stage.rawValue, "status": "complete"]
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelCount += 1
+        lock.unlock()
+    }
+}
+
+/// Reaches a `.partial` run (awaiting reference selection) so cancellation of
+/// a run that is blocked on human input can be exercised.
+private final class ReferenceSelectionDispatcher: WorkflowStageDispatcher, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var cancelCount = 0
+
+    func dispatch(stage: WorkflowStage, arguments: [String: Any]) throws -> [String: Any] {
+        if stage == .searchReferences {
+            return ["stage": stage.rawValue, "status": "complete", "results": [["title": "Example", "link": "https://example.com"]]]
+        }
         return ["stage": stage.rawValue, "status": "complete"]
     }
 

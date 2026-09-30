@@ -165,8 +165,11 @@ private final class WorkflowRunManager: @unchecked Sendable {
     func cancel(runId: String, reason: String?) -> [String: Any] {
         queue.sync {
             guard var record = records[runId] else { return workflowEnvelope(runId: runId, stage: .preflight, status: .cancelled, outputs: [:], blockedReason: reason ?? "Cancelled.") }
-            guard record.status == .running else { return record.latest }
+            // Terminal states are idempotent no-ops; every other state (running,
+            // partial while awaiting human input, or blocked) can still be cancelled.
+            guard record.status != .complete, record.status != .cancelled else { return record.latest }
             record.status = .cancelled
+            record.pendingActionID = nil
             record.latest = workflowEnvelope(runId: runId, stage: record.stage, status: .cancelled, outputs: [:], blockedReason: reason ?? "Cancelled.")
             records[runId] = record
             dispatcher.cancel(runId: runId)
