@@ -13,9 +13,14 @@ var products: [Product] = [
     ),
 ]
 
+let dependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+]
+
 var targets: [Target] = [
     .target(
         name: "OpenComputerUseWorkflowKit",
+        dependencies: [.product(name: "Crypto", package: "swift-crypto")],
         path: "packages/OpenComputerUseWorkflowKit/Sources/OpenComputerUseWorkflowKit"
     ),
     .executableTarget(
@@ -107,5 +112,6 @@ let package = Package(
     name: "OpenComputerUse",
     platforms: [.macOS(.v14)],
     products: products,
+    dependencies: dependencies,
     targets: targets
 )
