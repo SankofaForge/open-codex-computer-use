@@ -669,16 +669,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
             do {
                 if stage == .checkCaptureGPU {
                     let output = try captureMatrix(record: record)
-                    queue.sync {
-                        guard var current = records[runId], current.status == .running else { return }
-                        current.completedStages.append(.checkCaptureGPU)
-                        current.completedStages.append(.captureSiteMotion)
-                        current.previousResults[.checkCaptureGPU] = ["cells": output]
-                        current.previousResults[.captureSiteMotion] = ["cells": output]
-                        current.stage = .captureSiteMotion
-                        records[runId] = current
-                        writeCheckpoint(current)
-                    }
+                    recordStageCompletion(runId: runId, entries: [(.checkCaptureGPU, ["cells": output]), (.captureSiteMotion, ["cells": output])], currentStage: .captureSiteMotion)
                     continue
                 }
                 if stage == .submitMotionAnalysis {
@@ -692,14 +683,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                         finish(runId: runId, status: .partial, stage: stage, output: workflowEnvelope(runId: runId, stage: stage, status: .partial, outputs: ["nextCellId": waitingCell?["cellId"] ?? NSNull()], gaps: [gap]))
                         return
                     }
-                    queue.sync {
-                        guard var current = records[runId], current.status == .running else { return }
-                        current.completedStages.append(stage)
-                        current.previousResults[stage] = ["analyses": submissions.map { ["cellId": $0["cellId"]!, "path": $0["path"]!] }]
-                        current.stage = stage
-                        records[runId] = current
-                        writeCheckpoint(current)
-                    }
+                    recordStageCompletion(runId: runId, entries: [(stage, ["analyses": submissions.map { ["cellId": $0["cellId"]!, "path": $0["path"]!] }])], currentStage: stage)
                     continue
                 }
                 if stage == .extractFrames {
@@ -730,14 +714,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                         }
                         if let extracted = output["frames"] as? [[String: Any]] { frames.append(contentsOf: extracted) }
                     }
-                    queue.sync {
-                        guard var current = records[runId], current.status == .running else { return }
-                        current.completedStages.append(stage)
-                        current.previousResults[stage] = ["frames": frames]
-                        current.stage = stage
-                        records[runId] = current
-                        writeCheckpoint(current)
-                    }
+                    recordStageCompletion(runId: runId, entries: [(stage, ["frames": frames])], currentStage: stage)
                     continue
                 }
                 if stage == .handoffOpenDesign && record.approvedActions.isEmpty {
@@ -772,14 +749,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                     let expectedIDs = Set(preparedPlan.compactMap { $0["assetId"] as? String })
                     let report = try WorkflowEvidenceValidator.validateManifest(data: manifestData, workspaceRoot: record.workspaceRoot, expectedAssetIDs: record.taskProfile == WorkflowTaskProfile.visualImplementation.rawValue ? expectedIDs : nil)
                     let output: [String: Any] = ["stage": stage.rawValue, "status": report.manifestStatus.rawValue, "manifestPath": manifestURL.path, "captureCellCount": report.captureCellCount, "analysisCount": report.analysisCount, "readyAssetRouteCount": report.readyAssetRouteCount]
-                    queue.sync {
-                        guard var current = records[runId], current.status == .running else { return }
-                        current.completedStages.append(stage)
-                        current.previousResults[stage] = output
-                        current.stage = stage
-                        records[runId] = current
-                        writeCheckpoint(current)
-                    }
+                    recordStageCompletion(runId: runId, entries: [(stage, output)], currentStage: stage)
                     continue
                 }
                 var stageArguments = context.arguments(for: stage)
@@ -795,14 +765,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                         return
                     }
                     if status == "complete" || status == "partial" {
-                        queue.sync {
-                            guard var current = records[runId], current.status == .running else { return }
-                            current.completedStages.append(stage)
-                            current.previousResults[stage] = output
-                            current.stage = stage
-                            records[runId] = current
-                            writeCheckpoint(current)
-                        }
+                        recordStageCompletion(runId: runId, entries: [(stage, output)], currentStage: stage)
                         let gap = WorkflowGap(code: "reference_selection_required", message: "Choose exactly one primary reference from the provisional search results.", required: true)
                         finish(runId: runId, status: .partial, stage: stage, output: workflowEnvelope(runId: runId, stage: stage, status: .partial, outputs: output, gaps: [gap]))
                         return
@@ -813,15 +776,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                     finish(runId: runId, status: runStatus, stage: stage, output: output)
                     return
                 }
-                queue.sync {
-                    guard var current = records[runId], current.status == .running else { return }
-                    current.stage = stage
-                    current.completedStages.append(stage)
-                    current.previousResults[stage] = output
-                    current.latest = workflowEnvelope(runId: runId, stage: stage, status: .running, outputs: output)
-                    records[runId] = current
-                    writeCheckpoint(current)
-                }
+                recordStageCompletion(runId: runId, entries: [(stage, output)], currentStage: stage, latestOutput: output)
             } catch let error as WorkflowContractError {
                 finish(runId: runId, status: .blocked, stage: stage, output: workflowEnvelope(runId: runId, stage: stage, status: .blocked, outputs: [:], blockedReason: error.message, error: WorkflowErrorRecord(code: error.code, message: error.message)))
                 return
@@ -872,6 +827,26 @@ private final class WorkflowRunManager: @unchecked Sendable {
         }
         guard ["complete", "partial", "blocked"].contains(status) else { throw WorkflowContractError(.invalidEvidence, "\(stage.rawValue) returned an unsupported status") }
         return status
+    }
+
+    /// Records one or more completed stages against a still-running run and
+    /// checkpoints the result. `latestOutput`, when supplied, also advances the
+    /// run's externally-visible progress envelope (used only by the plain
+    /// per-stage dispatch path, which is polled mid-stage by workflow_status).
+    private func recordStageCompletion(runId: String, entries: [(stage: WorkflowStage, output: [String: Any])], currentStage: WorkflowStage, latestOutput: [String: Any]? = nil) {
+        queue.sync {
+            guard var current = records[runId], current.status == .running else { return }
+            for entry in entries {
+                current.completedStages.append(entry.stage)
+                current.previousResults[entry.stage] = entry.output
+            }
+            current.stage = currentStage
+            if let latestOutput {
+                current.latest = workflowEnvelope(runId: runId, stage: currentStage, status: .running, outputs: latestOutput)
+            }
+            records[runId] = current
+            writeCheckpoint(current)
+        }
     }
 
     private func finish(runId: String, status: WorkflowRunStatus, stage: WorkflowStage, output: Any) {
