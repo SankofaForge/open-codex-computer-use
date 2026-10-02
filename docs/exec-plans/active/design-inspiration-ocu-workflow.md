@@ -111,9 +111,9 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
   workflow kit while macOS retains the complete OCU package gate.
 - [x] Prepare a read-only macOS CI workflow that builds the native host, runs
   workflow contract and child-MCP transport tests, and uploads the binary and
-  logs. The workflow is local to this task branch and has not run.
-- [ ] Run the macOS CI workflow and inspect its artifact after a pull request
-  run is authorized.
+  logs. It supports pull requests and manual dispatch; no run has produced an
+  artifact yet.
+- [ ] Dispatch the macOS CI workflow from `main` and inspect its artifact.
 - [x] Implement the local stdio adapter's Vast-managed SSH bridge, remote
   worker invocation, artifact transfer, and cleanup lifecycle. The remote
   worker launches real Chrome explicitly and attaches through CDP.

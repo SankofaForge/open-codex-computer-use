@@ -19,6 +19,7 @@ local Open Design daemon.
   historical context.
 - Update the live status: the local daemon and plugin are available, but the
   workflow MCP entry is not registered in the current Codex configuration.
+- Correct the macOS validation follow-up now that the workflow is on `main`.
 
 ### Design intent
 
