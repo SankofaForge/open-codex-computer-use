@@ -146,6 +146,14 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
     }
 
     private func transport(for backend: WorkflowBackendConfiguration, runId: String) throws -> ChildMCPTransport {
+        if backend.kind == .openDesign,
+           environment["OD_DAEMON_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            throw WorkflowStageDispatchError.backend(WorkflowErrorRecord(
+                code: .invalidConfiguration,
+                message: "Open Design requires OD_DAEMON_URL in the workflow MCP process environment.",
+                backend: backend.kind.rawValue
+            ))
+        }
         let key = "\(runId)::\(backend.kind.rawValue)"
         lock.lock(); if let existing = transports[key] { lock.unlock(); return existing }; lock.unlock()
         let child = try ChildMCPTransport(configuration: ChildMCPBackendConfiguration(

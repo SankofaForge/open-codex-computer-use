@@ -33,6 +33,25 @@ final class ChildMCPTransportTests: XCTestCase {
         }
     }
 
+    func testForwardsOnlyAllowlistedEnvironmentNamesToChild() throws {
+        let transport = try makeTransport(
+            arguments: ["--environment-fixture"],
+            declaredTools: ["environment"],
+            permittedEnvironmentNames: ["OD_DAEMON_URL"]
+        )
+        defer { transport.cancel() }
+        try transport.start(environment: [
+            "OD_DAEMON_URL": "http://127.0.0.1:7456",
+            "WORKFLOW_MCP_FAKE_UNPERMITTED_VALUE": "must-not-pass",
+        ])
+
+        XCTAssertEqual(transport.discoveredTools.map(\.name), ["environment"])
+        let result = try transport.callTool("environment")
+        let structuredContent = try XCTUnwrap(result.objectValue?["structuredContent"]?.objectValue)
+        XCTAssertEqual(structuredContent["OD_DAEMON_URL"], .string("http://127.0.0.1:7456"))
+        XCTAssertEqual(structuredContent["WORKFLOW_MCP_FAKE_UNPERMITTED_VALUE"], .null)
+    }
+
     func testPreservesBackendJSONRPCError() throws {
         let transport = try makeTransport()
         defer { transport.cancel() }
@@ -123,6 +142,7 @@ final class ChildMCPTransportTests: XCTestCase {
     }
 
     private func makeTransport(
+        arguments: [String] = [],
         declaredTools: Set<String> = ["echo", "backend_error", "malformed", "oversized", "hang"],
         permittedEnvironmentNames: Set<String> = [],
         timeouts: ChildMCPTimeouts = ChildMCPTimeouts(startup: 1, request: 1, shutdown: 0.1),
@@ -132,6 +152,7 @@ final class ChildMCPTransportTests: XCTestCase {
             configuration: ChildMCPBackendConfiguration(
                 identifier: "fixture",
                 executableURL: try fakeBackendURL(),
+                arguments: arguments,
                 permittedEnvironmentVariableNames: permittedEnvironmentNames,
                 declaredToolNames: declaredTools,
                 timeouts: timeouts,
@@ -141,20 +162,11 @@ final class ChildMCPTransportTests: XCTestCase {
     }
 
     private func fakeBackendURL() throws -> URL {
-        let workingDirectoryCandidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/out/Products/Debug/WorkflowMCPFakeBackend")
-        if FileManager.default.isExecutableFile(atPath: workingDirectoryCandidate.path) {
-            return workingDirectoryCandidate
-        }
         var directory = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
         while directory.pathComponents.count > 1 {
             let candidate = directory.appendingPathComponent("WorkflowMCPFakeBackend")
             if FileManager.default.isExecutableFile(atPath: candidate.path) {
                 return candidate
-            }
-            let productsCandidate = directory.appendingPathComponent(".build/out/Products/Debug/WorkflowMCPFakeBackend")
-            if FileManager.default.isExecutableFile(atPath: productsCandidate.path) {
-                return productsCandidate
             }
             directory.deleteLastPathComponent()
         }

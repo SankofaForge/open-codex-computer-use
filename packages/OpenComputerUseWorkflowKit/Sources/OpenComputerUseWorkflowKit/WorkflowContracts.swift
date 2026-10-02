@@ -331,8 +331,13 @@ public struct WorkflowBackendConfiguration: Codable, Equatable, Sendable {
                 throw WorkflowContractError(.invalidConfiguration, "browser-use-capture must permit exactly VAST_INSTANCE_ID, VAST_API_KEY, BROWSER_USE_CHROMIUM_PATH")
             }
         }
-        if kind == .openDesign, launchPolicy != .direct {
-            throw WorkflowContractError(.invalidConfiguration, "open-design must use its generated direct command, not a secret wrapper")
+        if kind == .openDesign {
+            guard permittedEnvironmentVariables.contains("OD_DAEMON_URL") else {
+                throw WorkflowContractError(.invalidConfiguration, "open-design must permit OD_DAEMON_URL")
+            }
+            guard launchPolicy == .direct else {
+                throw WorkflowContractError(.invalidConfiguration, "open-design must use its generated direct command, not a secret wrapper")
+            }
         }
     }
 }

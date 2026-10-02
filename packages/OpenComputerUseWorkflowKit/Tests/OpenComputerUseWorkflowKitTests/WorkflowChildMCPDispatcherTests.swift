@@ -39,6 +39,31 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         }
     }
 
+    func testOpenDesignFailsBeforeLaunchingWhenDaemonURLIsMissingOrBlank() throws {
+        let backend = WorkflowBackendConfiguration(
+            kind: .openDesign,
+            command: "/definitely/missing",
+            permittedEnvironmentVariables: ["OD_DAEMON_URL"],
+            declaredTools: ["start_run"]
+        )
+        let invalidEnvironments: [[String: String]] = [[:], ["OD_DAEMON_URL": " \n"]]
+
+        for environment in invalidEnvironments {
+            let dispatcher = try ConfiguredChildMCPStageDispatcher(
+                configuration: WorkflowConfiguration(workspaceRoot: ".", backends: [backend]),
+                environment: environment
+            )
+
+            XCTAssertThrowsError(try dispatcher.dispatch(stage: .handoffOpenDesign, arguments: [:])) { error in
+                XCTAssertEqual(error as? WorkflowStageDispatchError, .backend(WorkflowErrorRecord(
+                    code: .invalidConfiguration,
+                    message: "Open Design requires OD_DAEMON_URL in the workflow MCP process environment.",
+                    backend: WorkflowBackendKind.openDesign.rawValue
+                )))
+            }
+        }
+    }
+
     func testBrowserUseCapabilityBlocksOnMissingRunnerConfigurationWithoutAutomaticRollback() throws {
         let dispatcher = try ConfiguredChildMCPStageDispatcher(
             configuration: browserUseConfiguration(includeSiteMotionRollback: true),
@@ -175,15 +200,10 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
     }
 
     private func fakeBackendURL() throws -> URL {
-        let workingDirectoryCandidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/out/Products/Debug/WorkflowMCPFakeBackend")
-        if FileManager.default.isExecutableFile(atPath: workingDirectoryCandidate.path) { return workingDirectoryCandidate }
         var directory = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
         while directory.pathComponents.count > 1 {
             let candidate = directory.appendingPathComponent("WorkflowMCPFakeBackend")
             if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
-            let productsCandidate = directory.appendingPathComponent(".build/out/Products/Debug/WorkflowMCPFakeBackend")
-            if FileManager.default.isExecutableFile(atPath: productsCandidate.path) { return productsCandidate }
             directory.deleteLastPathComponent()
         }
         throw NSError(domain: "WorkflowChildMCPDispatcherTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "fake backend executable not found"])

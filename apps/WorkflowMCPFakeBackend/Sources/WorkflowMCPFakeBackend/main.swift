@@ -25,6 +25,10 @@ enum WorkflowMCPFakeBackend {
             case "notifications/initialized":
                 continue
             case "tools/list":
+                if CommandLine.arguments.contains("--environment-fixture") {
+                    respond(id: id, result: ["tools": [["name": "environment"]]])
+                    continue
+                }
                 if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" || captureFixture != nil {
                     respond(id: id, result: ["tools": workflowTools.map { ["name": $0] }])
                     continue
@@ -49,6 +53,18 @@ enum WorkflowMCPFakeBackend {
     }
 
     private static func handleTool(name: String, id: Any?, arguments: Any) {
+        if name == "environment", CommandLine.arguments.contains("--environment-fixture") {
+            let processEnvironment = ProcessInfo.processInfo.environment
+            let daemonURL: Any = processEnvironment["OD_DAEMON_URL"] ?? NSNull()
+            let unpermittedValue: Any = processEnvironment["WORKFLOW_MCP_FAKE_UNPERMITTED_VALUE"] ?? NSNull()
+            respond(id: id, result: [
+                "structuredContent": [
+                    "OD_DAEMON_URL": daemonURL,
+                    "WORKFLOW_MCP_FAKE_UNPERMITTED_VALUE": unpermittedValue,
+                ],
+            ])
+            return
+        }
         if captureTools.contains(name), let captureFixture {
             let isBrowserUse = captureFixture == "--browser-use-fixture"
             let hasBrowserUseConfiguration = ["VAST_INSTANCE_ID", "VAST_API_KEY", "BROWSER_USE_CHROMIUM_PATH"]

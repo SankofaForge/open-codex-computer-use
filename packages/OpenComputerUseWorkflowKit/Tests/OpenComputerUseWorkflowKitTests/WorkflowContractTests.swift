@@ -28,9 +28,27 @@ final class WorkflowContractTests: XCTestCase {
         XCTAssertThrowsError(try WorkflowBackendConfiguration(
             kind: .openDesign,
             command: "od",
+            permittedEnvironmentVariables: ["OD_DAEMON_URL"],
             declaredTools: ["od_web_effect_extractor"],
             launchPolicy: .secretWrapper
         ).validate())
+    }
+
+    func testOpenDesignRequiresDaemonURLInEnvironmentAllowlist() throws {
+        XCTAssertNoThrow(try WorkflowBackendConfiguration(
+            kind: .openDesign,
+            command: "Open Design Helper",
+            permittedEnvironmentVariables: ["OD_DAEMON_URL"],
+            declaredTools: ["list_plugins"]
+        ).validate())
+
+        XCTAssertThrowsError(try WorkflowBackendConfiguration(
+            kind: .openDesign,
+            command: "Open Design Helper",
+            declaredTools: ["list_plugins"]
+        ).validate()) { error in
+            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
+        }
     }
 
     func testBrowserUseCaptureBackendHasStableRawValue() {

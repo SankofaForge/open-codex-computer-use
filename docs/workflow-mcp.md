@@ -63,7 +63,15 @@ does not accept shell fragments or secret values in configuration.
       "command": "<Settings-generated Open Design command>",
       "arguments": ["<Settings-generated daemon CLI and MCP arguments>"],
       "workingDirectory": "<generated working directory>",
-      "permittedEnvironmentVariables": ["OD_DATA_DIR", "ELECTRON_RUN_AS_NODE"],
+      "permittedEnvironmentVariables": [
+        "OD_DAEMON_URL",
+        "OD_DATA_DIR",
+        "ELECTRON_RUN_AS_NODE",
+        "OD_MCP_BOOTSTRAP_ARGS",
+        "OD_MCP_BOOTSTRAP_COMMAND",
+        "OD_MCP_DISCOVERY",
+        "OD_SIDECAR_CLIENT_ENDPOINT"
+      ],
       "declaredTools": ["list_plugins", "create_project", "start_run", "get_run", "cancel_run"],
       "launchPolicy": "direct"
     }
@@ -77,12 +85,21 @@ command, argument list, working directory, and environment names; packaged
 Electron installations may use the app executable as the command. Do not use
 an assumed `open-design-mcp serve` executable. Verify the tool list with an
 initialize/list-tools handshake and call `list_plugins` before a design run.
-An empty plugin list is a visible capability gap and blocks visual handoff.
+The list must include `od-web-effect-extractor` before visual handoff.
 
 The host launches backend commands directly rather than through a shell and
 passes the configured environment names alongside its sanitized baseline.
-Never put environment values or secrets in this JSON. The Browser Use backend
-must permit exactly `VAST_INSTANCE_ID`, `VAST_API_KEY`,
+The workflow MCP process must also receive the environment values that the
+Settings-generated Open Design entry uses. MCP server entries do not inherit
+each other's environment. In Codex, set `OD_DAEMON_URL` in the workflow MCP
+server's `env` table to the same value used by the direct Open Design entry.
+The child allowlist forwards that value; it does not read the sibling entry's
+environment. The host stops with `invalid_configuration` before it launches
+Open Design when `OD_DAEMON_URL` is missing. Copy the other generated
+environment values into the workflow server's environment when the generated
+command requires them. Never put environment values or secrets in this JSON.
+
+The Browser Use backend must permit exactly `VAST_INSTANCE_ID`, `VAST_API_KEY`,
 `BROWSER_USE_CHROMIUM_PATH`. Supply the Vast API key through the host
 environment. The browser path must point to a real, executable, non-Snap
 Chromium or Chrome binary on the Vast runner.
@@ -137,9 +154,8 @@ The host preserves the existing workflow evidence contract:
 - Open Design uses `list_plugins`, `create_project`, `start_run`, `get_run`,
   and `cancel_run`. Retries reuse the `start_run` request ID. Completion
   requires a workspace-contained artifact that passes size and hash checks.
-  The generated local MCP registration exposes these tools, but the current
-  plugin list is empty, so visual handoff remains blocked until the required
-  capability is available.
+  Verify at runtime that the plugin list includes
+  `od-web-effect-extractor`; a missing plugin blocks visual handoff.
 
 ## Smoke target
 

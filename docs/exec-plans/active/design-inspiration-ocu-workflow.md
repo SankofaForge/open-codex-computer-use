@@ -1,9 +1,9 @@
 # OCU-hosted design-inspiration workflow
 
 Current capture policy (2026-10-02): the disposable capture worker accepts
-HTTP(S) URLs that resolve to local or private addresses. The egress, proxy,
-and public-address gates discussed in the earlier investigation below are
-historical and no longer apply to capture acceptance.
+HTTP(S) URLs. Capture acceptance does not require public-address,
+private-address, proxy, or egress checks. The earlier investigation below is
+historical and does not define the current capture gate.
 
 ## Goal
 
@@ -87,23 +87,23 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
 - [x] Implement child transport and asynchronous workflow server lifecycle.
 - [x] Implement typed approvals/resume, profile-aware stages, atomic metadata
   checkpoints, cancellation, child-schema argument projection, and the
-  published Open Design MCP adapter. The local app handshake exposes the
-  adapter tools, but `list_plugins` is empty and blocks visual handoff.
+  published Open Design MCP adapter. On 2026-10-02, the local daemon listed
+  the trusted `od-web-effect-extractor` plugin. The dispatcher now requires
+  the daemon URL in its process environment and forwards it to the child. The
+  workflow MCP entry still needs registration.
 - [x] Add the Browser Use capture backend contract and fail-closed adapter
   boundary; runtime capture remains blocked until compatibility validation.
 - [x] Replace the manual Browser Use compatibility override with explicit
   non-Snap executable validation, a locked compatibility probe, and an
   expiring GPU-check capability. Chrome startup, recording, instrumentation,
   `nvidia-smi`, and hardware-backed WebGL passed in the latest recorded probe.
-- [x] Report CPU browser functions, GPU support, and egress compliance as
-  separate compatibility results. Treat `domain-not-approved` as a recorded
-  proxy denial, not a CPU-function failure. Preserve fail-closed capture
-  authorization while the browser-wide egress boundary remains unverified.
+- [x] Set the disposable-worker capture policy: require HTTP(S) URLs, consent,
+  capture evidence, and cleanup. Do not require public-address,
+  private-address, proxy, or egress checks.
 - [x] Replace the placeholder smoke target with deterministic lifecycle coverage.
 - [x] Require capture-cell v2, WebM video stream, jank, viewport and motion
-  match, consent result, cleanup, GPU proof, and runner-bound egress proof for
-  each complete capture. Align Swift and Python checks for run IDs, hashes,
-  paths, and proxy/cleanup proof.
+  match, consent result, cleanup, and GPU proof for each complete capture.
+  Align Swift and Python checks for run IDs, hashes, and artifact paths.
 - [x] Repair Browser Use evidence handling and the manual rollback route's
   untouched consent mode, mobile touch emulation, navigation-persistent jank,
   strict media validation, numeric namespace binding, and cleanup evidence.
@@ -117,11 +117,9 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
 - [x] Implement the local stdio adapter's Vast-managed SSH bridge, remote
   worker invocation, artifact transfer, and cleanup lifecycle. The remote
   worker launches real Chrome explicitly and attaches through CDP.
-- [ ] Verify the browser-wide egress boundary. The exact-host SOCKS proxy
-  denies unapproved requests, but current evidence does not prove that all
-  Chrome network paths use it. Earlier diagnostics recorded six Google
-  destinations without URL paths or request initiators, so do not attribute
-  them to Chrome services or expand the policy without reviewed authorization.
+- [x] Remove public-address, private-address, proxy, and egress checks from
+  disposable-worker capture acceptance. Keep URL syntax, consent, capture
+  evidence, and cleanup validation.
 
 ## Browser Use runner and acceptance boundary
 
@@ -136,19 +134,20 @@ the remote absolute path to a provisioned Chrome binary. The current dependency
 pin is `browser-use[video]==0.13.10`, locked with `uv.lock`.
 
 The compatibility probe must emit machine-readable JSON that records the
-browser executable, Browser Use release, Chrome version, separate CPU, GPU,
-and egress results, and a concrete failure reason when blocked. The CPU gate
-covers browser startup/CDP attachment, page evaluation and jank
-instrumentation, viewport and reduced-motion control, recording, domain policy,
-and cleanup. The GPU gate checks both `nvidia-smi` and a hardware-backed WebGL
-renderer. The egress gate requires proof that all browser network paths use
-the approved boundary and that required browser security services are
-reachable; a SOCKS negative control or successful TCP connection alone is
-insufficient. A CPU or GPU pass alone must not produce an authoritative
-`gpu_check_id` or authorize capture.
+browser executable, Browser Use release, Chrome version, separate CPU and GPU
+results, and a concrete failure reason when blocked. The CPU gate covers
+browser startup/CDP attachment, page evaluation and jank instrumentation,
+viewport and reduced-motion control, recording, and cleanup. The GPU gate
+checks both `nvidia-smi` and a hardware-backed WebGL renderer. A CPU or GPU
+failure must block capture and must include its failure reason.
 
 Test both blocked paths, including a CPU-gate failure while the GPU gate passes;
 the successful GPU result must not hide the CPU failure reason.
+
+### Historical egress investigation (superseded 2026-10-02)
+
+The proxy and public-address checks in this section were part of an earlier
+capture policy. They no longer apply to the disposable worker.
 
 ### Startup-timeout recovery
 
@@ -158,17 +157,18 @@ initial startup timeout. The rented runner now uses the real executable at
 path launches Chrome with an isolated profile and loopback CDP port, then
 attaches `BrowserSession` to the ready endpoint. Chrome starts on a local
 `data:` document to avoid the Browser Use `about:blank` logo request. Browser
-startup now passes. The compatibility probe reports CPU functionality
-separately from proxy outcomes. It does not collect URL paths or initiators,
-and observations before or after fixture navigation do not establish request
-ownership. Keep capture blocked until CPU, GPU, and browser-wide egress checks
-pass; do not add a manual compatibility override.
+startup now passes. The compatibility probe reported CPU functionality
+separately from proxy outcomes under the old policy. It did not collect URL
+paths or initiators, and observations before or after fixture navigation did
+not establish request ownership. These results do not affect current capture
+acceptance.
 
 ### Runtime candidate check (2026-09-22)
 
-The bounded A-path investigation found no browser that passes the current
-policy. Stock Chrome 153.0.8010.52 reached the fixture and passed the browser
-and hardware-WebGL checks, but the proxy rejected six Google service hosts.
+The bounded A-path investigation found no browser that passed the egress
+policy then in effect. Stock Chrome 153.0.8010.52 reached the fixture and
+passed the browser and hardware-WebGL checks, but the proxy rejected six
+Google service hosts.
 Chrome for Testing Stable 154.0.8037.57 passed those checks except for five
 rejected Google hosts. Its headless shell failed the fixture-title and
 hardware-WebGL checks. Microsoft Edge Stable 153.0.4234.48 passed the page,
@@ -176,8 +176,8 @@ viewport, reduced-motion, jank, recording, cleanup, and GPU checks, but the
 proxy rejected `edge.microsoft.com` on ports 80 and 443, `www.bing.com`, and
 `nav-edge.smartscreen.microsoft.com`.
 
-No browser default or egress rule changed. The workflow remains blocked and
-must not issue a `gpu_check_id` until CPU, GPU, and egress gates pass.
+These observations are historical diagnostics under the old proxy policy.
+They do not block current capture acceptance.
 
 ### Acceptance gates
 
@@ -191,23 +191,21 @@ not set cookies. The consent page says it does not set cookies or send data.
 Do not accept cookies. No captures have been made; fixture drift blocks the
 gate until the target is reviewed again.
 
-The runner provisioning checks currently show Chrome and an NVIDIA device to
+The runner provisioning checks show Chrome and an NVIDIA device to
 `nvidia-smi`. Exploratory startup and page-evaluation checks are not the full
-compatibility gate. Acceptance remains incomplete until the CPU,
-hardware-WebGL GPU, and browser-wide egress gates pass, followed by consent and
-animated/WebGL fixtures for all four evidence cells. Each cell must retain the
-existing `capture-cell.v2`, WebM, jank, consent, path, size, and SHA-256
-requirements and pass downstream `motion-analysis.v2` validation. The test
-suite must also cover
-JSON-RPC routing, timeout, cancellation, domain rejection, profile isolation,
-and cleanup.
+compatibility gate. Acceptance remains incomplete until the CPU and
+hardware-WebGL GPU gates pass, followed by consent and animated/WebGL fixtures
+for all four evidence cells. Each cell must retain the existing
+`capture-cell.v2`, WebM, jank, consent, path, size, and SHA-256 requirements and
+pass downstream `motion-analysis.v2` validation. The test suite must also cover
+JSON-RPC routing, timeout, cancellation, profile isolation, and cleanup.
 
 The performance comparison is three cold and five warm four-cell runs. Each
 cell must meet its existing timeout, with no more than a 20% regression in p95
 duration or peak memory versus the existing capture baseline. Until these
 results are recorded, Browser Use must not report complete evidence. Missing
 GPU, non-hardware WebGL, recording or jank failure, consent uncertainty,
-timeout, domain violation, cleanup failure, or artifact mismatch returns
+timeout, URL validation failure, cleanup failure, or artifact mismatch returns
 `blocked` or `partial`. `site-motion-capture` is available only through an
 explicit manual rollback configuration; automatic fallback is prohibited.
 
@@ -239,7 +237,7 @@ nonvisual tasks stop after preflight.
 
 Capture runs refresh the GPU check before each desktop/mobile and full/reduced
 motion cell. The Swift validator binds capture-cell v2 manifests to WebM and
-jank files, viewport, consent, cleanup, GPU, and runner egress attestation.
+jank files, viewport, consent, cleanup, and GPU evidence.
 Motion analyses must match their capture run, source path and hash, and frame
 path/hash pairs. Visual asset-route IDs must match the prepared plan.
 
@@ -257,13 +255,14 @@ including wrong-port proxy proof rejection passed (20 tests, run
 unittests, including wrong-port proxy proof rejection (run
 `20260924T020642Z-1264492-25935`).
 
-Live acceptance is blocked. Browser Use compatibility evidence does not prove
-browser-wide egress or required browser-service reachability, and the installed
-Open Design plugin list is empty. No consent action or network allowlist change
-was made. Do not run four-cell fixture captures or the three-cold/five-warm
-performance comparison until CPU, GPU, egress, fixture, and plugin gates pass.
-The new macOS validation workflow has not produced an artifact because this
-branch has not run in GitHub Actions.
+Live acceptance is incomplete. On 2026-10-02, the local Open Design daemon and
+active MCP connection both returned the trusted `od-web-effect-extractor`
+plugin. The Settings-generated child also passed `initialize`, `tools/list`,
+and `list_plugins`. The workflow MCP entry is not registered in the current
+Codex configuration, so the complete workflow has not run. The new macOS
+validation workflow has not produced an artifact. Do not run four-cell fixture
+captures or the three-cold/five-warm performance comparison until CPU, GPU,
+fixture, and plugin gates pass.
 
 ## macOS GUI acceptance boundary
 
