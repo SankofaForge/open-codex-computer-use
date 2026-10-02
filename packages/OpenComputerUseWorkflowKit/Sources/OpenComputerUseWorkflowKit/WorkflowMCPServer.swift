@@ -323,8 +323,8 @@ private final class WorkflowRunManager: @unchecked Sendable {
               reference["assetRequirements"] is [Any] else {
             throw WorkflowContractError(.invalidEvidence, "reference does not match design_prepare_references input")
         }
-        try safePublicHTTPURL(referenceURL, label: "reference.url")
-        try safePublicHTTPURL(liveURL, label: "reference.liveUrl")
+        try safeHTTPURL(referenceURL, label: "reference.url")
+        try safeHTTPURL(liveURL, label: "reference.liveUrl")
     }
 
     private func apply(_ submission: WorkflowResumeSubmission, to record: inout WorkflowRunRecord) throws {
@@ -619,24 +619,9 @@ private final class WorkflowRunManager: @unchecked Sendable {
         return value
     }
 
-    private func safePublicHTTPURL(_ value: String, label: String) throws {
+    private func safeHTTPURL(_ value: String, label: String) throws {
         guard let components = URLComponents(string: value), ["https", "http"].contains(components.scheme?.lowercased() ?? ""), components.host != nil, components.user == nil, components.password == nil else {
-            throw WorkflowContractError(.invalidEvidence, "\(label) must be a public HTTP(S) URL without credentials")
-        }
-        let host = (components.host ?? "").lowercased()
-        guard host != "localhost", host != "localhost.localdomain", !host.hasSuffix(".local") else {
-            throw WorkflowContractError(.invalidEvidence, "\(label) must not target a private host")
-        }
-        let octets = host.split(separator: ".").compactMap { Int($0) }
-        if octets.count == 4 {
-            let a = octets[0], b = octets[1]
-            let privateAddress = a == 0 || a == 10 || a == 127 || (a == 100 && (64...127).contains(b)) || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b)) || (a == 192 && (b == 0 || b == 168)) || a >= 224
-            guard !privateAddress else { throw WorkflowContractError(.invalidEvidence, "\(label) must not target a private host") }
-        }
-        if host.contains(":") {
-            guard host != "::1", !host.hasPrefix("fc"), !host.hasPrefix("fd"), !host.hasPrefix("fe80"), !host.hasPrefix("::ffff:") else {
-                throw WorkflowContractError(.invalidEvidence, "\(label) must not target a private host")
-            }
+            throw WorkflowContractError(.invalidEvidence, "\(label) must be an HTTP(S) URL without credentials")
         }
     }
 

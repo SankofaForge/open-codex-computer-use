@@ -93,7 +93,7 @@ a browser at runtime. Startup/CDP, recording, instrumentation, NVIDIA, and
 hardware-backed WebGL checks passed in the latest recorded probe. The
 compatibility report separates CPU browser functions and GPU support. Host
 preflight checks the configured backend and declared tools. Each capture still
-requires a fresh GPU check, public-target validation, consent, recording,
+requires a fresh GPU check, HTTP(S) URL validation, consent, recording,
 jank, artifact hashes, and cleanup. The capture workflow no longer requires an
 egress attestation or proxy boundary.
 

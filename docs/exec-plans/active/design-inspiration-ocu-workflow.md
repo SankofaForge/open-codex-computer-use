@@ -1,5 +1,10 @@
 # OCU-hosted design-inspiration workflow
 
+Current capture policy (2026-10-02): the disposable capture worker accepts
+HTTP(S) URLs that resolve to local or private addresses. The egress, proxy,
+and public-address gates discussed in the earlier investigation below are
+historical and no longer apply to capture acceptance.
+
 ## Goal
 
 Provide a macOS-first, separate `workflow-mcp` surface that orchestrates the

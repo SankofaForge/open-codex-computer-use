@@ -142,6 +142,15 @@ final class WorkflowContractTests: XCTestCase {
         XCTAssertEqual(report.readyAssetRouteCount, 1)
     }
 
+    func testManifestAllowsLocalReferenceURL() throws {
+        let fixture = try WorkflowFixture.make()
+        var manifest = fixture.manifest
+        var reference = manifest["reference"] as! [String: Any]
+        reference["url"] = "http://localhost:8080/reference"
+        manifest["reference"] = reference
+        XCTAssertNoThrow(try WorkflowEvidenceValidator.validateManifest(manifest, workspaceRoot: fixture.root))
+    }
+
     func testVisualAssetRouteIDsMustMatchPreparedPlan() throws {
         let fixture = try WorkflowFixture.make()
         XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root, expectedAssetIDs: ["different-id"])) { error in

@@ -437,21 +437,7 @@ private func safeHTTPURL(_ value: String, label: String) throws {
           components.host != nil,
           components.user == nil,
           components.password == nil else {
-        throw WorkflowContractError(.invalidEvidence, "\(label) must be a safe http(s) URL")
-    }
-    let hostname = (components.host ?? "").lowercased()
-    try require(hostname != "localhost" && hostname != "localhost.localdomain" && !hostname.hasSuffix(".local"), .invalidEvidence, "\(label) must not target a private host")
-    if hostname.contains(":") {
-        let privateIPv6 = hostname == "::1" || hostname.hasPrefix("fc") || hostname.hasPrefix("fd") || hostname.hasPrefix("fe80") || hostname.hasPrefix("::ffff:")
-        try require(!privateIPv6, .invalidEvidence, "\(label) must not target a private host")
-    } else {
-        let parts = hostname.split(separator: ".").compactMap { Int($0) }
-        if parts.count == 4 {
-            let first = parts[0]
-            let second = parts[1]
-            let privateIPv4 = first == 0 || first == 10 || first == 127 || (first == 100 && (64...127).contains(second)) || (first == 169 && second == 254) || (first == 172 && (16...31).contains(second)) || (first == 192 && (second == 0 || second == 168)) || (first == 198 && (18...19).contains(second)) || first >= 224
-            try require(!privateIPv4, .invalidEvidence, "\(label) must not target a private host")
-        }
+        throw WorkflowContractError(.invalidEvidence, "\(label) must be an HTTP(S) URL without credentials")
     }
 }
 
