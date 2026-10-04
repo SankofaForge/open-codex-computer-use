@@ -29,7 +29,7 @@ enum WorkflowMCPFakeBackend {
                     respond(id: id, result: ["tools": [["name": "environment"]]])
                     continue
                 }
-                if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" || captureFixture != nil {
+                if ProcessInfo.processInfo.environment["WORKFLOW_MCP_FAKE_WORKFLOW"] == "1" || captureFixture {
                     respond(id: id, result: ["tools": workflowTools.map { ["name": $0] }])
                     continue
                 }
@@ -65,15 +65,14 @@ enum WorkflowMCPFakeBackend {
             ])
             return
         }
-        if captureTools.contains(name), let captureFixture {
-            let isBrowserUse = captureFixture == "--browser-use-fixture"
+        if captureTools.contains(name), captureFixture {
             let hasBrowserUseConfiguration = ["VAST_INSTANCE_ID", "VAST_API_KEY", "BROWSER_USE_CHROMIUM_PATH"]
                 .allSatisfy { ProcessInfo.processInfo.environment[$0]?.isEmpty == false }
-            let available = !isBrowserUse || hasBrowserUseConfiguration
+            let available = hasBrowserUseConfiguration
             let status = available ? "complete" : "blocked"
             var structuredContent: [String: Any] = [
                 "status": status,
-                "capability": ["id": isBrowserUse ? "browser-use-capture" : "site-motion-capture", "available": available],
+                "capability": ["id": "browser-use-capture", "available": available],
             ]
             if !available {
                 structuredContent["blockedReason"] = "Capture runner configuration is incomplete."
@@ -115,8 +114,8 @@ enum WorkflowMCPFakeBackend {
 
     private static let captureTools: Set<String> = ["check_capture_gpu", "capture_site_motion"]
 
-    private static var captureFixture: String? {
-        CommandLine.arguments.first { $0 == "--browser-use-fixture" || $0 == "--site-motion-fixture" }
+    private static var captureFixture: Bool {
+        CommandLine.arguments.contains("--browser-use-fixture")
     }
 
     private static func respond(id: Any?, result: [String: Any]) {

@@ -206,8 +206,7 @@ duration or peak memory versus the existing capture baseline. Until these
 results are recorded, Browser Use must not report complete evidence. Missing
 GPU, non-hardware WebGL, recording or jank failure, consent uncertainty,
 timeout, URL validation failure, cleanup failure, or artifact mismatch returns
-`blocked` or `partial`. `site-motion-capture` is available only through an
-explicit manual rollback configuration; automatic fallback is prohibited.
+`blocked` or `partial`. There is no fallback capture backend.
 
 ## Decisions
 

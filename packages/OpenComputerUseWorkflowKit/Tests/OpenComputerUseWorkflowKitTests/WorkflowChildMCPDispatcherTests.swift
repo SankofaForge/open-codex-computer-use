@@ -64,9 +64,9 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         }
     }
 
-    func testBrowserUseCapabilityBlocksOnMissingRunnerConfigurationWithoutAutomaticRollback() throws {
+    func testBrowserUseCapabilityBlocksOnMissingRunnerConfiguration() throws {
         let dispatcher = try ConfiguredChildMCPStageDispatcher(
-            configuration: browserUseConfiguration(includeSiteMotionRollback: true),
+            configuration: browserUseConfiguration(),
             environment: [:]
         )
         defer { dispatcher.shutdown() }
@@ -87,31 +87,6 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         XCTAssertEqual(captureOutput["backend"] as? String, "browser-use-capture")
         XCTAssertEqual(captureOutput["tool"] as? String, "capture_site_motion")
         XCTAssertEqual(captureOutput["status"] as? String, "blocked")
-    }
-
-    func testSiteMotionCaptureIsUsedOnlyWhenExplicitlySelected() throws {
-        let dispatcher = try ConfiguredChildMCPStageDispatcher(
-            configuration: siteMotionRollbackConfiguration(),
-            environment: [:]
-        )
-        defer { dispatcher.shutdown() }
-
-        let output = try dispatcher.dispatch(stage: .captureSiteMotion, arguments: [:])
-        XCTAssertEqual(output["backend"] as? String, "site-motion-capture")
-        XCTAssertEqual(output["tool"] as? String, "capture_site_motion")
-        XCTAssertEqual(output["status"] as? String, "complete")
-    }
-
-    func testConfiguredSiteMotionBackendIsNotAnImplicitFallback() throws {
-        let dispatcher = try ConfiguredChildMCPStageDispatcher(
-            configuration: WorkflowConfiguration(workspaceRoot: ".", backends: [try siteMotionBackend()]),
-            environment: [:]
-        )
-        defer { dispatcher.shutdown() }
-
-        XCTAssertThrowsError(try dispatcher.dispatch(stage: .checkCaptureGPU, arguments: [:])) { error in
-            XCTAssertEqual(error as? WorkflowStageDispatchError, .missingBackend(.browserUseCapture, .checkCaptureGPU))
-        }
     }
 
     func testRejectsMissingDeclaredTool() throws {
@@ -151,8 +126,8 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
     func testCaptureBackendMustBeConfiguredWhenExplicitlySelected() throws {
         XCTAssertThrowsError(try WorkflowConfiguration(
             workspaceRoot: ".",
-            backends: [browserUseBackend()],
-            captureBackend: .siteMotionCapture
+            backends: [],
+            captureBackend: .browserUseCapture
         ).validate()) { error in
             XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
         }
@@ -167,16 +142,8 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         )])
     }
 
-    private func browserUseConfiguration(includeSiteMotionRollback: Bool = false) throws -> WorkflowConfiguration {
-        var backends = [try browserUseBackend()]
-        if includeSiteMotionRollback {
-            backends.append(try siteMotionBackend())
-        }
-        return WorkflowConfiguration(workspaceRoot: ".", backends: backends)
-    }
-
-    private func siteMotionRollbackConfiguration() throws -> WorkflowConfiguration {
-        WorkflowConfiguration(workspaceRoot: ".", backends: [try siteMotionBackend()], captureBackend: .siteMotionCapture)
+    private func browserUseConfiguration() throws -> WorkflowConfiguration {
+        WorkflowConfiguration(workspaceRoot: ".", backends: [try browserUseBackend()])
     }
 
     private func browserUseBackend() throws -> WorkflowBackendConfiguration {
@@ -185,16 +152,6 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
             command: try fakeBackendURL().path,
             arguments: ["--browser-use-fixture"],
             permittedEnvironmentVariables: browserUseEnvironmentVariables,
-            declaredTools: ["check_capture_gpu", "capture_site_motion"]
-        )
-    }
-
-    private func siteMotionBackend() throws -> WorkflowBackendConfiguration {
-        WorkflowBackendConfiguration(
-            kind: .siteMotionCapture,
-            command: try fakeBackendURL().path,
-            arguments: ["--site-motion-fixture"],
-            permittedEnvironmentVariables: ["CAPTURE_SERVICE_API_KEY"],
             declaredTools: ["check_capture_gpu", "capture_site_motion"]
         )
     }

@@ -50,15 +50,6 @@ does not accept shell fragments or secret values in configuration.
       "launchPolicy": "direct"
     },
     {
-      "kind": "site-motion-capture",
-      "command": "site-motion-capture-mcp",
-      "arguments": [],
-      "workingDirectory": ".",
-      "permittedEnvironmentVariables": ["CAPTURE_SERVICE_API_KEY"],
-      "declaredTools": ["check_capture_gpu", "capture_site_motion"],
-      "launchPolicy": "direct"
-    },
-    {
       "kind": "open-design",
       "command": "<Settings-generated Open Design command>",
       "arguments": ["<Settings-generated daemon CLI and MCP arguments>"],
@@ -114,12 +105,10 @@ requires a fresh GPU check, HTTP(S) URL validation, consent, recording,
 jank, artifact hashes, and cleanup. The capture workflow no longer requires an
 egress attestation or proxy boundary.
 
-`captureBackend` selects one capture backend for both capture stages. If it is
-omitted, Browser Use is selected. A blocked Browser Use result remains blocked;
-the host does not retry through `site-motion-capture`. To select the legacy
-backend manually during the acceptance window, set `captureBackend` to
-`site-motion-capture` and provide its backend declaration. Only the selected
-backend is launched.
+`captureBackend` names the capture backend for both capture stages. If it is
+omitted, Browser Use is selected, and `browser-use-capture` is the only accepted
+value. A blocked Browser Use result remains blocked; the host does not retry
+through another backend.
 
 ## Planned evidence and data boundary
 
@@ -142,9 +131,8 @@ The host preserves the existing workflow evidence contract:
 - Checkpoints are atomic metadata-only records under
   `<workspaceRoot>/.workflow/checkpoints/<runId>.json`.
 - Capture artifacts remain under
-  `artifacts/design-inspiration/site-motion-capture/`.
-  Browser Use is the default capture backend; the legacy site-motion-capture
-  backend remains a manually selected rollback during acceptance.
+  `artifacts/design-inspiration/capture-evidence/`.
+  Browser Use is the only capture backend.
 - A manifest cannot report `complete` without the responsive and motion
   evidence matrix, Open Design handoff, and ready asset routes.
 - Model-provider selection remains harness-specific. The host only validates a

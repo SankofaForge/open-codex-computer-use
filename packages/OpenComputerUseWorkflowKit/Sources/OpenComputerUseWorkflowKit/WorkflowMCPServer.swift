@@ -210,7 +210,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                 "height": height,
                 "mobile": viewport == "mobile",
                 "reducedMotion": motionMode == "reduced",
-                "output_dir": record.workspaceRoot.appendingPathComponent("artifacts/design-inspiration/site-motion-capture", isDirectory: true).path,
+                "output_dir": record.workspaceRoot.appendingPathComponent("artifacts/design-inspiration/capture-evidence", isDirectory: true).path,
                 "name": "\(record.runId)-\(cellId)",
                 "consent_mode": "reject",
                 "gpu": true,
@@ -691,7 +691,7 @@ private final class WorkflowRunManager: @unchecked Sendable {
                             "sourcePath": sourcePath,
                             "cellId": cellId,
                             "timestamps": moments.compactMap { $0["timestampSeconds"] },
-                            "output_dir": record.workspaceRoot.appendingPathComponent("artifacts/design-inspiration/site-motion-capture/frames", isDirectory: true).path,
+                            "output_dir": record.workspaceRoot.appendingPathComponent("artifacts/design-inspiration/capture-evidence/frames", isDirectory: true).path,
                         ]
                         let output = try dispatcher.dispatch(stage: .extractFrames, arguments: extractionArguments)
                         guard try validatedStageStatus(output, stage: .extractFrames) == "complete" else {

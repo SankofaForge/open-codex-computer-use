@@ -108,46 +108,10 @@ final class WorkflowContractTests: XCTestCase {
         XCTAssertThrowsError(try WorkflowConfiguration(
             workspaceRoot: ".",
             backends: [],
-            captureBackend: .siteMotionCapture
-        ).validate()) { error in
-            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
-        }
-
-        XCTAssertThrowsError(try WorkflowConfiguration(
-            workspaceRoot: ".",
-            backends: [],
             captureBackend: .assetRouting
         ).validate()) { error in
             XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
         }
-    }
-
-    func testWorkflowConfigurationLoadsManualCaptureBackendSelection() throws {
-        let path = FileManager.default.temporaryDirectory
-            .appendingPathComponent("workflow-mcp-config-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: path) }
-
-        let configurationJSON = """
-        {
-          "workspaceRoot": ".",
-          "captureBackend": "site-motion-capture",
-          "backends": [
-            {
-              "kind": "site-motion-capture",
-              "command": "site-motion-capture-mcp",
-              "arguments": [],
-              "workingDirectory": ".",
-              "permittedEnvironmentVariables": [],
-              "declaredTools": ["check_capture_gpu", "capture_site_motion"],
-              "launchPolicy": "direct"
-            }
-          ]
-        }
-        """
-        try Data(configurationJSON.utf8).write(to: path)
-
-        let configuration = try WorkflowConfiguration.load(path: path.path)
-        XCTAssertEqual(configuration.captureBackend, .siteMotionCapture)
     }
 
     func testValidVisualImplementationFixturePasses() throws {
@@ -352,10 +316,10 @@ private final class WorkflowFixture {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         var cells: [[String: Any]] = []
         var analyses: [[String: Any]] = []
-        let frame = try artifact(root: root, path: "artifacts/design-inspiration/site-motion-capture/frame.png", contents: "frame")
+        let frame = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/frame.png", contents: "frame")
         for (index, pair) in [("desktop", "full"), ("desktop", "reduced"), ("mobile", "full"), ("mobile", "reduced")].enumerated() {
-            let capture = try artifact(root: root, path: "artifacts/design-inspiration/site-motion-capture/capture-\(index).webm", contents: "capture \(index)")
-            let jank = try artifact(root: root, path: "artifacts/design-inspiration/site-motion-capture/capture-\(index).jank.json", contents: "{\"status\":\"valid\"}")
+            let capture = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/capture-\(index).webm", contents: "capture \(index)")
+            let jank = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/capture-\(index).jank.json", contents: "{\"status\":\"valid\"}")
             let cellID = "cell-\(index)"
             let finalURL = "https://preview.example/\(cellID)"
             let viewport: [String: Any] = ["width": pair.0 == "desktop" ? 1920 : 390, "height": pair.0 == "desktop" ? 1080 : 844, "mobile": pair.0 == "mobile", "reducedMotion": pair.1 == "reduced"]
@@ -380,9 +344,9 @@ private final class WorkflowFixture {
                 ],
             ]
             let captureManifestData = try JSONSerialization.data(withJSONObject: captureManifestObject, options: [.sortedKeys])
-            let captureManifestPath = root.appendingPathComponent("artifacts/design-inspiration/site-motion-capture/capture-\(index).capture-cell.v2.json")
+            let captureManifestPath = root.appendingPathComponent("artifacts/design-inspiration/capture-evidence/capture-\(index).capture-cell.v2.json")
             try captureManifestData.write(to: captureManifestPath)
-            let captureManifest: [String: Any] = ["path": "artifacts/design-inspiration/site-motion-capture/capture-\(index).capture-cell.v2.json", "size": captureManifestData.count, "sha256": WorkflowSHA256.hexDigest(captureManifestData), "nonEmpty": true]
+            let captureManifest: [String: Any] = ["path": "artifacts/design-inspiration/capture-evidence/capture-\(index).capture-cell.v2.json", "size": captureManifestData.count, "sha256": WorkflowSHA256.hexDigest(captureManifestData), "nonEmpty": true]
             cells.append([
                 "cellId": cellID,
                 "viewport": pair.0,

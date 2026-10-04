@@ -264,7 +264,6 @@ public struct WorkflowControlEnvelope: Codable, Equatable, Sendable {
 
 public enum WorkflowBackendKind: String, Codable, Sendable {
     case designInspiration = "design-inspiration"
-    case siteMotionCapture = "site-motion-capture"
     case browserUseCapture = "browser-use-capture"
     case openDesign = "open-design"
     case frameExtraction = "frame-extraction"
@@ -402,8 +401,8 @@ public struct WorkflowConfiguration: Codable, Equatable, Sendable {
             throw WorkflowContractError(.invalidConfiguration, "workflow backend kinds must be unique")
         }
         if let captureBackend {
-            guard captureBackend == .browserUseCapture || captureBackend == .siteMotionCapture else {
-                throw WorkflowContractError(.invalidConfiguration, "captureBackend must be browser-use-capture or site-motion-capture")
+            guard captureBackend == .browserUseCapture else {
+                throw WorkflowContractError(.invalidConfiguration, "captureBackend must be browser-use-capture")
             }
             guard kinds.contains(captureBackend) else {
                 throw WorkflowContractError(.invalidConfiguration, "captureBackend must reference a configured backend")

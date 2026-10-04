@@ -163,7 +163,7 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
             workingDirectoryURL: backend.workingDirectory.map(URL.init(fileURLWithPath:)),
             permittedEnvironmentVariableNames: Set(backend.permittedEnvironmentVariables),
             declaredToolNames: Set(backend.declaredTools),
-            timeouts: ChildMCPTimeouts(request: backend.kind == .browserUseCapture || backend.kind == .siteMotionCapture ? 300 : backend.kind == .openDesign ? 900 : 60)
+            timeouts: ChildMCPTimeouts(request: backend.kind == .browserUseCapture ? 300 : backend.kind == .openDesign ? 900 : 60)
         ))
         try child.start(environment: environment)
         lock.lock(); transports[key] = child; lock.unlock()
