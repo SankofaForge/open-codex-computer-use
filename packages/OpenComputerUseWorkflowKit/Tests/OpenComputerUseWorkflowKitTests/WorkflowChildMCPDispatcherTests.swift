@@ -157,7 +157,7 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
     }
 
     private func fakeBackendURL() throws -> URL {
-        var directory = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+        var directory = Bundle(for: Self.self).bundleURL.resolvingSymlinksInPath().deletingLastPathComponent()
         while directory.pathComponents.count > 1 {
             let candidate = directory.appendingPathComponent("WorkflowMCPFakeBackend")
             if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }

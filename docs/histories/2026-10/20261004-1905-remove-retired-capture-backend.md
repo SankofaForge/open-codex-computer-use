@@ -32,10 +32,13 @@ and the old directory name in the output paths misled readers and left two
 code paths to maintain.
 
 ### 🧪 Verification
-- The 46 workflow-kit tests pass. The fake-backend tests only find their
-  backend when the test runner's `argv[0]` sits beside the staged binary, so
-  they were run through `xctest` directly with that layout. They fail the same
-  way on the unmodified baseline under plain `swift test` on this toolchain.
+- The full Swift suite passes from a clean build: 174 tests, 0 failures, and
+  2 skipped live-Chrome tests that need a real browser session.
+- The fake-backend tests used to locate their helper binary by walking up from
+  `argv[0]`. With Swift 6.4, `swift test` launches Xcode's own `xctest`
+  binary, so the walk never reached the build directory and 14 workflow tests
+  failed on the unmodified baseline too. Both helpers now start from the test
+  bundle's directory, which holds the staged binary.
 - A host built from this source completes the MCP initialize and tools/list
   handshake with `workflow-mcp --config` and lists 15 workflow tools.
 - Earlier dated histories still use the old name; they record past state.
@@ -47,5 +50,6 @@ code paths to maintain.
 - `packages/OpenComputerUseWorkflowKit/Tests/OpenComputerUseWorkflowKitTests/WorkflowContractTests.swift`
 - `packages/OpenComputerUseWorkflowKit/Tests/OpenComputerUseWorkflowKitTests/WorkflowChildMCPDispatcherTests.swift`
 - `apps/WorkflowMCPFakeBackend/Sources/WorkflowMCPFakeBackend/main.swift`
+- `packages/OpenComputerUseWorkflowKit/Tests/OpenComputerUseWorkflowKitTests/ChildMCPTransportTests.swift`
 - `docs/workflow-mcp.md`
 - `docs/exec-plans/active/design-inspiration-ocu-workflow.md`
