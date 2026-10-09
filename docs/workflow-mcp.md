@@ -29,7 +29,6 @@ does not accept shell fragments or secret values in configuration.
 
 ```json
 {
-  "captureBackend": "browser-use-capture",
   "backends": [
     {
       "kind": "design-inspiration",
@@ -105,10 +104,8 @@ requires a fresh GPU check, HTTP(S) URL validation, consent, recording,
 jank, artifact hashes, and cleanup. The capture workflow no longer requires an
 egress attestation or proxy boundary.
 
-`captureBackend` names the capture backend for both capture stages. If it is
-omitted, Browser Use is selected, and `browser-use-capture` is the only accepted
-value. A blocked Browser Use result remains blocked; the host does not retry
-through another backend.
+Browser Use handles both capture stages. A blocked capture remains blocked;
+the host does not retry through another backend.
 
 ## Planned evidence and data boundary
 

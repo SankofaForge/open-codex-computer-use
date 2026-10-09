@@ -104,16 +104,6 @@ final class WorkflowContractTests: XCTestCase {
         }
     }
 
-    func testExplicitCaptureBackendMustBeSupportedAndConfigured() throws {
-        XCTAssertThrowsError(try WorkflowConfiguration(
-            workspaceRoot: ".",
-            backends: [],
-            captureBackend: .assetRouting
-        ).validate()) { error in
-            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
-        }
-    }
-
     func testValidVisualImplementationFixturePasses() throws {
         let fixture = try WorkflowFixture.make()
         let report = try WorkflowEvidenceValidator.validateManifest(fixture.manifest, workspaceRoot: fixture.root, expectedAssetIDs: ["hero-model"])

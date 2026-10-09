@@ -123,16 +123,6 @@ final class WorkflowChildMCPDispatcherTests: XCTestCase {
         }
     }
 
-    func testCaptureBackendMustBeConfiguredWhenExplicitlySelected() throws {
-        XCTAssertThrowsError(try WorkflowConfiguration(
-            workspaceRoot: ".",
-            backends: [],
-            captureBackend: .browserUseCapture
-        ).validate()) { error in
-            XCTAssertEqual((error as? WorkflowContractError)?.code, .invalidConfiguration)
-        }
-    }
-
     private func configuration(tools: [String] = ["design_search_references"]) throws -> WorkflowConfiguration {
         WorkflowConfiguration(workspaceRoot: ".", backends: [WorkflowBackendConfiguration(
             kind: .designInspiration,

@@ -39,8 +39,7 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
 
     public func dispatch(stage: WorkflowStage, arguments: [String: Any]) throws -> [String: Any] {
         if stage == .preflight {
-            if arguments["requiresCapture"] as? Bool == true,
-               configuration.captureBackend ?? .browserUseCapture == .browserUseCapture {
+            if arguments["requiresCapture"] as? Bool == true {
                 guard let backend = configuration.backends.first(where: { $0.kind == .browserUseCapture }) else {
                     throw WorkflowStageDispatchError.missingBackend(.browserUseCapture, .preflight)
                 }
@@ -137,9 +136,9 @@ public final class ConfiguredChildMCPStageDispatcher: WorkflowStageDispatcher {
     private func route(for stage: WorkflowStage) -> Route? {
         switch stage {
         case .checkCaptureGPU:
-            return Route(kind: configuration.captureBackend ?? .browserUseCapture, tool: "check_capture_gpu")
+            return Route(kind: .browserUseCapture, tool: "check_capture_gpu")
         case .captureSiteMotion:
-            return Route(kind: configuration.captureBackend ?? .browserUseCapture, tool: "capture_site_motion")
+            return Route(kind: .browserUseCapture, tool: "capture_site_motion")
         default:
             return routes[stage]
         }
