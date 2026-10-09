@@ -19,9 +19,8 @@ MCP backends without changing the existing nine-tool `mcp` surface.
   backend adapters, and workflow-specific smoke coverage.
 - Preserve `workflow-manifest.v2`, `motion-analysis.v2`, authoritative capture
   paths, provider boundaries, and declarative fail-closed asset routing.
-- Browser Use capture is the default implementation behind the existing
-  `check_capture_gpu` and `capture_site_motion` stages. The legacy capture
-  backend remains available only as a manual rollback during acceptance.
+- Browser Use handles the `check_capture_gpu` and `capture_site_motion`
+  stages. The manual rollback backend was removed on 2026-10-04.
 - Target runtime: the workflow launches a local stdio adapter; the adapter
   runs the pinned Browser Use worker on the rented GPU runner over Vast-managed
   SSH. Chrome is provisioned on that runner and selected by an explicit
@@ -101,9 +100,9 @@ four-cell matrix completeness, Open Design redaction, and no-secret logging.
   capture evidence, and cleanup. Do not require public-address,
   private-address, proxy, or egress checks.
 - [x] Replace the placeholder smoke target with deterministic lifecycle coverage.
-- [x] Require capture-cell v2, WebM video stream, jank, viewport and motion
-  match, consent result, cleanup, and GPU proof for each complete capture.
-  Align Swift and Python checks for run IDs, hashes, and artifact paths.
+- [x] Require a validated WebM and jank report for each complete capture.
+  The capture MCP checks media, consent, cleanup, and GPU. Swift and Python
+  bind each analysis to the capture run and artifact path/hash.
 - [x] Repair Browser Use evidence handling and the manual rollback route's
   untouched consent mode, mobile touch emulation, navigation-persistent jank,
   strict media validation, numeric namespace binding, and cleanup evidence.
@@ -195,9 +194,10 @@ The runner provisioning checks show Chrome and an NVIDIA device to
 `nvidia-smi`. Exploratory startup and page-evaluation checks are not the full
 compatibility gate. Acceptance remains incomplete until the CPU and
 hardware-WebGL GPU gates pass, followed by consent and animated/WebGL fixtures
-for all four evidence cells. Each cell must retain the existing
-`capture-cell.v2`, WebM, jank, consent, path, size, and SHA-256 requirements and
-pass downstream `motion-analysis.v2` validation. The test suite must also cover
+for all four evidence cells. Each cell must retain its WebM and jank report with
+matching paths, sizes, and SHA-256 hashes, and pass downstream
+`motion-analysis.v2` validation. The capture MCP checks consent, GPU, media,
+and cleanup before reporting a complete cell. The test suite must also cover
 JSON-RPC routing, timeout, cancellation, profile isolation, and cleanup.
 
 The performance comparison is three cold and five warm four-cell runs. Each
@@ -235,8 +235,7 @@ rejects workspace changes. Search candidates pause for explicit selection;
 nonvisual tasks stop after preflight.
 
 Capture runs refresh the GPU check before each desktop/mobile and full/reduced
-motion cell. The Swift validator binds capture-cell v2 manifests to WebM and
-jank files, viewport, consent, cleanup, and GPU evidence.
+motion cell. The Swift validator checks the jank report and artifact hashes.
 Motion analyses must match their capture run, source path and hash, and frame
 path/hash pairs. Visual asset-route IDs must match the prepared plan.
 

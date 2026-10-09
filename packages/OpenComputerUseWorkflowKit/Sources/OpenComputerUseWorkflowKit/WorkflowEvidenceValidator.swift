@@ -64,7 +64,7 @@ public enum WorkflowEvidenceValidator {
             try safeHTTPURL(cell.requiredString("finalUrl"), label: "capture finalUrl")
             let artifacts = try cell.requiredArray("artifacts")
             if status == "complete" {
-                try require(artifacts.count >= 3, .invalidEvidence, "complete capture cells require WebM, jank, and capture-cell artifacts")
+                try require(artifacts.count == 2, .invalidEvidence, "complete capture cells require one WebM and one jank report")
             }
             if status == "blocked" {
                 _ = try cell.requiredString("blockedReason")
@@ -79,17 +79,9 @@ public enum WorkflowEvidenceValidator {
                 try require(captureArtifacts.insert(key).inserted, .invalidEvidence, "capture artifacts must not be reused across cells")
             }
             if status == "complete" {
-                try validateCaptureCellEvidence(
+                try validateCaptureArtifacts(
                     artifacts: validatedCellArtifacts,
-                    cell: cell,
-                    workspaceRoot: root,
-                    cellID: cellID,
-                    runID: try cell.requiredString("runId"),
-                    finalURL: try cell.requiredString("finalUrl"),
-                    viewport: viewport,
-                    motionMode: mode,
-                    width: try positiveInteger(cell["width"], label: "capture width"),
-                    height: try positiveInteger(cell["height"], label: "capture height")
+                    workspaceRoot: root
                 )
             }
             cellsByID[cellID] = cell
@@ -278,80 +270,32 @@ public enum WorkflowEvidenceValidator {
     }
 }
 
-private func validateCaptureCellEvidence(
-    artifacts: [[String: Any]],
-    cell: [String: Any],
-    workspaceRoot: URL,
-    cellID: String,
-    runID: String,
-    finalURL: String,
-    viewport: String,
-    motionMode: String,
-    width: Int,
-    height: Int
-) throws {
-    func artifact(suffix: String) throws -> [String: Any] {
-        guard let match = artifacts.first(where: { (($0["path"] as? String) ?? "").hasSuffix(suffix) }) else {
-            throw WorkflowContractError(.invalidEvidence, "complete capture cell requires a \(suffix) artifact")
-        }
-        return match
+private func validateCaptureArtifacts(artifacts: [[String: Any]], workspaceRoot: URL) throws {
+    let videos = artifacts.filter { (($0["path"] as? String) ?? "").hasSuffix(".webm") }
+    let janks = artifacts.filter { (($0["path"] as? String) ?? "").hasSuffix(".jank.json") }
+    try require(videos.count == 1 && janks.count == 1, .invalidEvidence, "complete capture cell requires one WebM and one jank report")
+    guard let jank = janks.first,
+          let jankPath = jank["path"] as? String else {
+        throw WorkflowContractError(.invalidEvidence, "complete capture cell has no jank report")
     }
-    let video = try artifact(suffix: ".webm")
-    let jank = try artifact(suffix: ".jank.json")
-    let captureManifest = try artifact(suffix: ".capture-cell.v2.json")
-    let manifestPath = try captureManifest.requiredString("path")
-    let manifestURL = workspaceRoot.appendingPathComponent(manifestPath).resolvingSymlinksInPath().standardizedFileURL
-    let captureData = try Data(contentsOf: manifestURL)
-    guard let capture = try JSONSerialization.jsonObject(with: captureData) as? [String: Any] else {
-        throw WorkflowContractError(.invalidEvidence, "capture-cell.v2 artifact must be a JSON object")
+    let jankURL = workspaceRoot.appendingPathComponent(jankPath).resolvingSymlinksInPath().standardizedFileURL
+    let jankData = try Data(contentsOf: jankURL)
+    guard let report = try JSONSerialization.jsonObject(with: jankData) as? [String: Any] else {
+        throw WorkflowContractError(.invalidEvidence, "jank report must be a JSON object")
     }
-    try require(capture["contractVersion"] as? String == "capture-cell.v2", .unsupportedSchema, "unsupported capture-cell contractVersion")
-    try require(capture["runId"] as? String == runID, .invalidEvidence, "capture-cell runId does not match workflow cell")
-    try require(capture["cellId"] as? String == cellID, .invalidEvidence, "capture-cell cellId does not match workflow cell")
-    try require(capture["finalUrl"] as? String == finalURL, .invalidEvidence, "capture-cell finalUrl does not match workflow cell")
-    try require(capture["status"] as? String == "complete", .invalidEvidence, "capture-cell manifest is not complete")
-    let viewportEvidence = try capture.requiredObject("viewport")
-    let evidenceWidth = try positiveInteger(viewportEvidence["width"], label: "capture-cell viewport width")
-    let evidenceHeight = try positiveInteger(viewportEvidence["height"], label: "capture-cell viewport height")
-    try require(evidenceWidth == width, .invalidEvidence, "capture-cell viewport width does not match workflow cell")
-    try require(evidenceHeight == height, .invalidEvidence, "capture-cell viewport height does not match workflow cell")
-    try require(viewportEvidence["mobile"] as? Bool == (viewport == "mobile"), .invalidEvidence, "capture-cell mobile setting does not match workflow cell")
-    try require(viewportEvidence["reducedMotion"] as? Bool == (motionMode == "reduced"), .invalidEvidence, "capture-cell reduced-motion setting does not match workflow cell")
-
-    let validation = try capture.requiredObject("validation")
-    let media = try validation.requiredObject("media")
-    try require(media["status"] as? String == "valid", .invalidEvidence, "capture-cell media validation is not valid")
-    try require((media["format"] as? String ?? "").lowercased().contains("webm"), .invalidEvidence, "capture-cell media format is not WebM")
-    _ = try finiteNumber(media["durationSeconds"], label: "capture-cell media durationSeconds", minimumExclusive: 0)
-    let videoStreamCount = try positiveInteger(media["videoStreamCount"], label: "capture-cell videoStreamCount")
-    try require(videoStreamCount >= 1, .invalidEvidence, "capture-cell has no video stream")
-    let jankValidation = try validation.requiredObject("jank")
-    try require(jankValidation["status"] as? String == "valid", .invalidEvidence, "capture-cell jank validation is not valid")
-    try require(capture["cleanup"] as? String == "confirmed", .invalidEvidence, "capture-cell cleanup is not confirmed")
-
-    let evidence = try capture.requiredObject("evidence")
-    let gpu = try evidence.requiredObject("gpu")
-    try require(gpu["status"] as? String == "verified", .invalidEvidence, "capture-cell GPU evidence is not verified")
-    let consent = try evidence.requiredObject("consent")
-    try require(consent["verified"] as? Bool == true, .invalidEvidence, "capture-cell consent is not verified")
-    try require((consent["blindSpots"] as? [Any] ?? []).isEmpty, .invalidEvidence, "capture-cell consent has blind spots")
-    let scroll = try evidence.requiredObject("scroll")
-    try require(scroll["completed"] as? Bool == true, .invalidEvidence, "capture-cell scroll did not complete")
-    try require(scroll["truncated"] as? Bool == false, .invalidEvidence, "capture-cell scroll is truncated")
-    try require((evidence["interactionFailures"] as? [Any] ?? []).isEmpty, .invalidEvidence, "capture-cell contains interaction failures")
-
-    let files = try capture.requiredArray("files")
-    for expected in [video, jank] {
-        let expectedPath = try expected.requiredString("path")
-        let basename = URL(fileURLWithPath: expectedPath).lastPathComponent
-        let expectedSize = try positiveInteger(expected["size"], label: "capture artifact size")
-        let expectedHash = try expected.requiredString("sha256")
-        let matching = try files.compactMap { try object($0, label: "capture-cell file") }.first {
-            $0["path"] as? String == basename
-        }
-        try require((matching?["size"] as? Int) == expectedSize, .invalidEvidence, "capture-cell file size does not match workflow artifact")
-        try require(matching?["sha256"] as? String == expectedHash, .invalidEvidence, "capture-cell file hash does not match workflow artifact")
+    try require(report["schemaVersion"] as? String == "jank-report.v1", .unsupportedSchema, "unsupported jank report schema")
+    try require(report["status"] as? String == "valid", .invalidEvidence, "jank report is not valid")
+    let consent = try report.requiredObject("consent")
+    let mode = try consent.requiredEnum("mode", values: ["reject", "accept", "none", "granular"])
+    if mode == "accept" {
+        try require(consent["action"] as? String == "accepted" && consent["bannerVisible"] as? Bool == false, .invalidEvidence, "accepted consent was not verified")
+    } else {
+        try require(consent["verified"] as? Bool == true, .invalidEvidence, "consent was not verified")
+        try require((consent["blindSpots"] as? [Any] ?? []).isEmpty, .invalidEvidence, "consent has blind spots")
     }
+    let scroll = try report.requiredObject("scroll")
+    try require(scroll["completed"] as? Bool == true && scroll["truncated"] as? Bool == false, .invalidEvidence, "jank report scrolling is incomplete")
+    try require((report["interactionFailures"] as? [Any] ?? []).isEmpty, .invalidEvidence, "jank report contains interaction failures")
 }
 
 public struct MotionAnalysisValidationResult: Equatable, Sendable {

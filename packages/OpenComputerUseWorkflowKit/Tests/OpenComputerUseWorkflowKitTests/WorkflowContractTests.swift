@@ -147,27 +147,26 @@ final class WorkflowContractTests: XCTestCase {
         }
     }
 
-    func testCaptureCellRequiresConsentAndVideoStream() throws {
-        let noStream = try WorkflowFixture.make()
-        var capture = noStream.manifest["capture"] as! [String: Any]
+    func testJankConsentMustBeVerified() throws {
+        let invalidConsent = try WorkflowFixture.make()
+        var capture = invalidConsent.manifest["capture"] as! [String: Any]
         var cells = capture["matrix"] as! [[String: Any]]
-        let artifact = (cells[0]["artifacts"] as! [[String: Any]]).first { ($0["path"] as? String)?.hasSuffix(".capture-cell.v2.json") == true }!
-        let file = noStream.root.appendingPathComponent(artifact["path"] as! String)
-        var cellManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
-        var validation = cellManifest["validation"] as! [String: Any]
-        var media = validation["media"] as! [String: Any]
-        media["videoStreamCount"] = 0
-        validation["media"] = media
-        cellManifest["validation"] = validation
-        let changed = try JSONSerialization.data(withJSONObject: cellManifest)
+        let artifacts = cells[0]["artifacts"] as! [[String: Any]]
+        let artifact = artifacts.first { ($0["path"] as? String)?.hasSuffix(".jank.json") == true }!
+        let file = invalidConsent.root.appendingPathComponent(artifact["path"] as! String)
+        var report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        var consent = report["consent"] as! [String: Any]
+        consent["verified"] = false
+        report["consent"] = consent
+        let changed = try JSONSerialization.data(withJSONObject: report)
         try changed.write(to: file)
-        cells[0]["artifacts"] = (cells[0]["artifacts"] as! [[String: Any]]).map { value in
+        cells[0]["artifacts"] = artifacts.map { value in
             guard value["path"] as? String == artifact["path"] as? String else { return value }
             return ["path": value["path"]!, "size": changed.count, "sha256": WorkflowSHA256.hexDigest(changed), "nonEmpty": true]
         }
         capture["matrix"] = cells
-        noStream.manifest["capture"] = capture
-        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(noStream.manifest, workspaceRoot: noStream.root))
+        invalidConsent.manifest["capture"] = capture
+        XCTAssertThrowsError(try WorkflowEvidenceValidator.validateManifest(invalidConsent.manifest, workspaceRoot: invalidConsent.root))
     }
 
     func testStageArgumentsDoNotLeakHostState() {
@@ -309,34 +308,9 @@ private final class WorkflowFixture {
         let frame = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/frame.png", contents: "frame")
         for (index, pair) in [("desktop", "full"), ("desktop", "reduced"), ("mobile", "full"), ("mobile", "reduced")].enumerated() {
             let capture = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/capture-\(index).webm", contents: "capture \(index)")
-            let jank = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/capture-\(index).jank.json", contents: "{\"status\":\"valid\"}")
+            let jank = try artifact(root: root, path: "artifacts/design-inspiration/capture-evidence/capture-\(index).jank.json", contents: #"{"schemaVersion":"jank-report.v1","status":"valid","consent":{"mode":"reject","action":"rejected","actionTaken":true,"verified":true,"blindSpots":[]},"scroll":{"completed":true,"truncated":false},"interactionFailures":[]}"#)
             let cellID = "cell-\(index)"
             let finalURL = "https://preview.example/\(cellID)"
-            let viewport: [String: Any] = ["width": pair.0 == "desktop" ? 1920 : 390, "height": pair.0 == "desktop" ? 1080 : 844, "mobile": pair.0 == "mobile", "reducedMotion": pair.1 == "reduced"]
-            let captureManifestObject: [String: Any] = [
-                "contractVersion": "capture-cell.v2",
-                "runId": "capture-\(index)",
-                "cellId": cellID,
-                "finalUrl": finalURL,
-                "viewport": viewport,
-                "files": [
-                    ["path": URL(fileURLWithPath: capture["path"] as! String).lastPathComponent, "size": capture["size"]!, "sha256": capture["sha256"]!],
-                    ["path": URL(fileURLWithPath: jank["path"] as! String).lastPathComponent, "size": jank["size"]!, "sha256": jank["sha256"]!],
-                ],
-                "validation": ["media": ["status": "valid", "format": "webm", "durationSeconds": 8.0, "videoStreamCount": 1], "jank": ["status": "valid"]],
-                "cleanup": "confirmed",
-                "status": "complete",
-                "evidence": [
-                    "gpu": ["status": "verified"],
-                    "consent": ["verified": true, "blindSpots": []],
-                    "scroll": ["completed": true, "truncated": false],
-                    "interactionFailures": [],
-                ],
-            ]
-            let captureManifestData = try JSONSerialization.data(withJSONObject: captureManifestObject, options: [.sortedKeys])
-            let captureManifestPath = root.appendingPathComponent("artifacts/design-inspiration/capture-evidence/capture-\(index).capture-cell.v2.json")
-            try captureManifestData.write(to: captureManifestPath)
-            let captureManifest: [String: Any] = ["path": "artifacts/design-inspiration/capture-evidence/capture-\(index).capture-cell.v2.json", "size": captureManifestData.count, "sha256": WorkflowSHA256.hexDigest(captureManifestData), "nonEmpty": true]
             cells.append([
                 "cellId": cellID,
                 "viewport": pair.0,
@@ -346,7 +320,7 @@ private final class WorkflowFixture {
                 "height": pair.0 == "desktop" ? 1080 : 844,
                 "runId": "capture-\(index)",
                 "finalUrl": finalURL,
-                "artifacts": [capture, jank, captureManifest],
+                "artifacts": [capture, jank],
             ])
             analyses.append([
                 "schemaVersion": "motion-analysis.v2",

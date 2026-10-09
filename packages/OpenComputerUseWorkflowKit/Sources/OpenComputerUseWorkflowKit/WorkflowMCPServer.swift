@@ -229,6 +229,12 @@ private final class WorkflowRunManager: @unchecked Sendable {
                 throw WorkflowContractError(.invalidEvidence, "capture cell \(cellId) is not complete")
             }
             var result = capture
+            let captureArtifacts = try requiredObject(capture, "artifacts")
+            guard let video = captureArtifacts["video"] as? [String: Any],
+                  let jank = captureArtifacts["jank"] as? [String: Any] else {
+                throw WorkflowContractError(.invalidEvidence, "capture output must include its WebM and jank report")
+            }
+            result["artifacts"] = [video, jank]
             result["cellId"] = cellId
             result["viewport"] = viewport
             result["motionMode"] = motionMode
